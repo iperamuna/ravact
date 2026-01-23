@@ -29,6 +29,8 @@ func NewPostgreSQLManagementModel() PostgreSQLManagementModel {
 	
 	actions := []string{
 		"View Current Configuration",
+		"Change Postgres Password",
+		"Change Port",
 		"Restart PostgreSQL Service",
 		"View Service Status",
 		"List Databases",
@@ -90,6 +92,27 @@ func (m PostgreSQLManagementModel) executeAction() (PostgreSQLManagementModel, t
 		} else {
 			m.config = config
 			m.success = "✓ Configuration refreshed"
+		}
+
+	case "Change Postgres Password":
+		return m, func() tea.Msg {
+			return NavigateMsg{
+				Screen: PostgreSQLPasswordScreen,
+				Data: map[string]interface{}{
+					"manager": m.manager,
+				},
+			}
+		}
+
+	case "Change Port":
+		return m, func() tea.Msg {
+			return NavigateMsg{
+				Screen: PostgreSQLPortScreen,
+				Data: map[string]interface{}{
+					"manager": m.manager,
+					"config":  m.config,
+				},
+			}
 		}
 
 	case "Restart PostgreSQL Service":
@@ -212,4 +235,9 @@ func (m PostgreSQLManagementModel) View() string {
 		lipgloss.Center,
 		bordered,
 	)
+}
+
+// SetSuccess sets a success message (called when returning from sub-screens)
+func (m *PostgreSQLManagementModel) SetSuccess(msg string) {
+	m.success = msg
 }

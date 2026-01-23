@@ -29,6 +29,8 @@ func NewMySQLManagementModel() MySQLManagementModel {
 	
 	actions := []string{
 		"View Current Configuration",
+		"Change Root Password",
+		"Change Port",
 		"Restart MySQL Service",
 		"View Service Status",
 		"List Databases",
@@ -100,6 +102,27 @@ func (m MySQLManagementModel) executeAction() (MySQLManagementModel, tea.Cmd) {
 		} else {
 			m.config = config
 			m.success = "✓ Configuration refreshed"
+		}
+
+	case "Change Root Password":
+		return m, func() tea.Msg {
+			return NavigateMsg{
+				Screen: MySQLPasswordScreen,
+				Data: map[string]interface{}{
+					"manager": m.manager,
+				},
+			}
+		}
+
+	case "Change Port":
+		return m, func() tea.Msg {
+			return NavigateMsg{
+				Screen: MySQLPortScreen,
+				Data: map[string]interface{}{
+					"manager": m.manager,
+					"config":  m.config,
+				},
+			}
 		}
 
 	case "Restart MySQL Service":
@@ -233,4 +256,9 @@ func (m MySQLManagementModel) View() string {
 		lipgloss.Center,
 		bordered,
 	)
+}
+
+// SetSuccess sets a success message (called when returning from sub-screens)
+func (m *MySQLManagementModel) SetSuccess(msg string) {
+	m.success = msg
 }

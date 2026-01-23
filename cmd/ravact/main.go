@@ -38,7 +38,11 @@ type Model struct {
 	redisPassword  screens.RedisPasswordModel
 	redisPort      screens.RedisPortModel
 	mysqlManagement screens.MySQLManagementModel
+	mysqlPassword   screens.MySQLPasswordModel
+	mysqlPort       screens.MySQLPortModel
 	postgresqlManagement screens.PostgreSQLManagementModel
+	postgresqlPassword   screens.PostgreSQLPasswordModel
+	postgresqlPort       screens.PostgreSQLPortModel
 	phpfpmManagement screens.PHPFPMManagementModel
 	supervisorManagement screens.SupervisorManagementModel
 	quickCommands  screens.QuickCommandsModel
@@ -180,10 +184,68 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case screens.MySQLManagementScreen:
 			// Initialize MySQL management screen
 			m.mysqlManagement = screens.NewMySQLManagementModel()
+			// Handle success message from sub-screens
+			if msg.Data != nil {
+				if data, ok := msg.Data.(map[string]interface{}); ok {
+					if success, ok := data["success"].(string); ok {
+						m.mysqlManagement.SetSuccess(success)
+					}
+				}
+			}
+		
+		case screens.MySQLPasswordScreen:
+			// Initialize MySQL password screen
+			if msg.Data != nil {
+				if data, ok := msg.Data.(map[string]interface{}); ok {
+					if manager, ok := data["manager"].(*system.MySQLManager); ok {
+						m.mysqlPassword = screens.NewMySQLPasswordModel(manager)
+					}
+				}
+			}
+		
+		case screens.MySQLPortScreen:
+			// Initialize MySQL port screen
+			if msg.Data != nil {
+				if data, ok := msg.Data.(map[string]interface{}); ok {
+					if manager, ok := data["manager"].(*system.MySQLManager); ok {
+						config, _ := data["config"].(*system.MySQLConfig)
+						m.mysqlPort = screens.NewMySQLPortModel(manager, config)
+					}
+				}
+			}
 		
 		case screens.PostgreSQLManagementScreen:
 			// Initialize PostgreSQL management screen
 			m.postgresqlManagement = screens.NewPostgreSQLManagementModel()
+			// Handle success message from sub-screens
+			if msg.Data != nil {
+				if data, ok := msg.Data.(map[string]interface{}); ok {
+					if success, ok := data["success"].(string); ok {
+						m.postgresqlManagement.SetSuccess(success)
+					}
+				}
+			}
+		
+		case screens.PostgreSQLPasswordScreen:
+			// Initialize PostgreSQL password screen
+			if msg.Data != nil {
+				if data, ok := msg.Data.(map[string]interface{}); ok {
+					if manager, ok := data["manager"].(*system.PostgreSQLManager); ok {
+						m.postgresqlPassword = screens.NewPostgreSQLPasswordModel(manager)
+					}
+				}
+			}
+		
+		case screens.PostgreSQLPortScreen:
+			// Initialize PostgreSQL port screen
+			if msg.Data != nil {
+				if data, ok := msg.Data.(map[string]interface{}); ok {
+					if manager, ok := data["manager"].(*system.PostgreSQLManager); ok {
+						config, _ := data["config"].(*system.PostgreSQLConfig)
+						m.postgresqlPort = screens.NewPostgreSQLPortModel(manager, config)
+					}
+				}
+			}
 		
 		case screens.PHPFPMManagementScreen:
 			// Initialize PHP-FPM management screen
@@ -367,10 +429,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		model, cmd = m.mysqlManagement.Update(msg)
 		m.mysqlManagement = model.(screens.MySQLManagementModel)
 	
+	case screens.MySQLPasswordScreen:
+		var model tea.Model
+		model, cmd = m.mysqlPassword.Update(msg)
+		m.mysqlPassword = model.(screens.MySQLPasswordModel)
+	
+	case screens.MySQLPortScreen:
+		var model tea.Model
+		model, cmd = m.mysqlPort.Update(msg)
+		m.mysqlPort = model.(screens.MySQLPortModel)
+	
 	case screens.PostgreSQLManagementScreen:
 		var model tea.Model
 		model, cmd = m.postgresqlManagement.Update(msg)
 		m.postgresqlManagement = model.(screens.PostgreSQLManagementModel)
+	
+	case screens.PostgreSQLPasswordScreen:
+		var model tea.Model
+		model, cmd = m.postgresqlPassword.Update(msg)
+		m.postgresqlPassword = model.(screens.PostgreSQLPasswordModel)
+	
+	case screens.PostgreSQLPortScreen:
+		var model tea.Model
+		model, cmd = m.postgresqlPort.Update(msg)
+		m.postgresqlPort = model.(screens.PostgreSQLPortModel)
 	
 	case screens.PHPFPMManagementScreen:
 		var model tea.Model
@@ -442,8 +524,16 @@ func (m Model) View() string {
 		return m.redisConfig.View()
 	case screens.MySQLManagementScreen:
 		return m.mysqlManagement.View()
+	case screens.MySQLPasswordScreen:
+		return m.mysqlPassword.View()
+	case screens.MySQLPortScreen:
+		return m.mysqlPort.View()
 	case screens.PostgreSQLManagementScreen:
 		return m.postgresqlManagement.View()
+	case screens.PostgreSQLPasswordScreen:
+		return m.postgresqlPassword.View()
+	case screens.PostgreSQLPortScreen:
+		return m.postgresqlPort.View()
 	case screens.PHPFPMManagementScreen:
 		return m.phpfpmManagement.View()
 	case screens.SupervisorManagementScreen:

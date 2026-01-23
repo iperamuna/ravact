@@ -24,7 +24,11 @@ const (
 	RedisPortScreen
 	ExecutionScreen
 	MySQLManagementScreen
+	MySQLPasswordScreen
+	MySQLPortScreen
 	PostgreSQLManagementScreen
+	PostgreSQLPasswordScreen
+	PostgreSQLPortScreen
 	PHPFPMManagementScreen
 	SupervisorManagementScreen
 )
