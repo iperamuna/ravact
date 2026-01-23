@@ -37,6 +37,10 @@ type Model struct {
 	redisConfig    screens.RedisConfigModel
 	redisPassword  screens.RedisPasswordModel
 	redisPort      screens.RedisPortModel
+	mysqlManagement screens.MySQLManagementModel
+	postgresqlManagement screens.PostgreSQLManagementModel
+	phpfpmManagement screens.PHPFPMManagementModel
+	supervisorManagement screens.SupervisorManagementModel
 	quickCommands  screens.QuickCommandsModel
 	execution      screens.ExecutionModel
 	configEditorActive string // "add_site" or "site_details"
@@ -172,6 +176,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case screens.RedisConfigScreen:
 			// Initialize Redis config screen
 			m.redisConfig = screens.NewRedisConfigModel()
+		
+		case screens.MySQLManagementScreen:
+			// Initialize MySQL management screen
+			m.mysqlManagement = screens.NewMySQLManagementModel()
+		
+		case screens.PostgreSQLManagementScreen:
+			// Initialize PostgreSQL management screen
+			m.postgresqlManagement = screens.NewPostgreSQLManagementModel()
+		
+		case screens.PHPFPMManagementScreen:
+			// Initialize PHP-FPM management screen
+			m.phpfpmManagement = screens.NewPHPFPMManagementModel()
+		
+		case screens.SupervisorManagementScreen:
+			// Initialize Supervisor management screen
+			m.supervisorManagement = screens.NewSupervisorManagementModel()
 		
 		case screens.RedisPasswordScreen:
 			// Initialize Redis password screen
@@ -342,6 +362,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		model, cmd = m.redisConfig.Update(msg)
 		m.redisConfig = model.(screens.RedisConfigModel)
 	
+	case screens.MySQLManagementScreen:
+		var model tea.Model
+		model, cmd = m.mysqlManagement.Update(msg)
+		m.mysqlManagement = model.(screens.MySQLManagementModel)
+	
+	case screens.PostgreSQLManagementScreen:
+		var model tea.Model
+		model, cmd = m.postgresqlManagement.Update(msg)
+		m.postgresqlManagement = model.(screens.PostgreSQLManagementModel)
+	
+	case screens.PHPFPMManagementScreen:
+		var model tea.Model
+		model, cmd = m.phpfpmManagement.Update(msg)
+		m.phpfpmManagement = model.(screens.PHPFPMManagementModel)
+	
+	case screens.SupervisorManagementScreen:
+		var model tea.Model
+		model, cmd = m.supervisorManagement.Update(msg)
+		m.supervisorManagement = model.(screens.SupervisorManagementModel)
+	
 	case screens.RedisPasswordScreen:
 		var model tea.Model
 		model, cmd = m.redisPassword.Update(msg)
@@ -400,6 +440,14 @@ func (m Model) View() string {
 		return m.editorSelection.View()
 	case screens.RedisConfigScreen:
 		return m.redisConfig.View()
+	case screens.MySQLManagementScreen:
+		return m.mysqlManagement.View()
+	case screens.PostgreSQLManagementScreen:
+		return m.postgresqlManagement.View()
+	case screens.PHPFPMManagementScreen:
+		return m.phpfpmManagement.View()
+	case screens.SupervisorManagementScreen:
+		return m.supervisorManagement.View()
 	case screens.RedisPasswordScreen:
 		return m.redisPassword.View()
 	case screens.RedisPortScreen:
