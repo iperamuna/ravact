@@ -46,23 +46,30 @@ func NewConfigMenuModel() ConfigMenuModel {
 		{
 			ID:          "mysql",
 			Name:        "MySQL Database",
-			Description: "Manage MySQL databases and users (Coming Soon)",
-			Available:   false,
-			Screen:      MainMenuScreen, // Placeholder
+			Description: "Manage MySQL databases, passwords, and port configuration",
+			Available:   true,
+			Screen:      MySQLManagementScreen,
 		},
 		{
 			ID:          "postgresql",
 			Name:        "PostgreSQL Database",
-			Description: "Manage PostgreSQL databases and users (Coming Soon)",
-			Available:   false,
-			Screen:      MainMenuScreen, // Placeholder
+			Description: "Manage PostgreSQL databases, passwords, and performance tuning",
+			Available:   true,
+			Screen:      PostgreSQLManagementScreen,
 		},
 		{
 			ID:          "php",
-			Name:        "PHP Configuration",
-			Description: "Manage PHP-FPM pools and settings (Coming Soon)",
-			Available:   false,
-			Screen:      MainMenuScreen, // Placeholder
+			Name:        "PHP-FPM Pools",
+			Description: "Manage PHP-FPM pools and worker process configuration",
+			Available:   true,
+			Screen:      PHPFPMManagementScreen,
+		},
+		{
+			ID:          "supervisor",
+			Name:        "Supervisor",
+			Description: "Manage supervisor programs and XML-RPC configuration",
+			Available:   true,
+			Screen:      SupervisorManagementScreen,
 		},
 	}
 

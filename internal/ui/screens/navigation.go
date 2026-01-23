@@ -23,6 +23,10 @@ const (
 	RedisPasswordScreen
 	RedisPortScreen
 	ExecutionScreen
+	MySQLManagementScreen
+	PostgreSQLManagementScreen
+	PHPFPMManagementScreen
+	SupervisorManagementScreen
 )
 
 // NavigateMsg is sent when navigating between screens
