@@ -20,9 +20,18 @@ echo ""
 if [ "$EUID" -ne 0 ]; then 
     echo -e "${YELLOW}⚠️  This script should be run with sudo for system-wide installation${NC}"
     echo ""
-    echo "Usage: sudo bash install.sh"
+    echo "Usage: sudo bash install.sh [--local /path/to/binary]"
     echo ""
     exit 1
+fi
+
+# Parse arguments
+LOCAL_BINARY=""
+if [ "$1" = "--local" ] && [ -n "$2" ]; then
+    LOCAL_BINARY="$2"
+    echo -e "${YELLOW}⚠️  Local install mode enabled${NC}"
+    echo "Using local binary: $LOCAL_BINARY"
+    echo ""
 fi
 
 # Detect system architecture
@@ -79,17 +88,24 @@ echo -e "${BLUE}Fetching latest release information...${NC}"
 LATEST_VERSION=$(curl -s https://api.github.com/repos/iperamuna/ravact/releases/latest | grep -o '"tag_name": "[^"]*"' | cut -d'"' -f4)
 
 if [ -z "$LATEST_VERSION" ]; then
-    echo -e "${RED}❌ Failed to fetch latest version${NC}"
-    echo "Please check your internet connection and try again"
-    exit 1
+    echo -e "${YELLOW}⚠️  Failed to fetch latest version from GitHub${NC}"
+    echo "This may indicate no internet access or GitHub API is blocked."
+    echo ""
+    read -p "Enter version to install (e.g., v1.0.0): " MANUAL_VERSION
+    if [ -z "$MANUAL_VERSION" ]; then
+        echo -e "${RED}❌ No version provided. Exiting.${NC}"
+        exit 1
+    fi
+    VERSION="$MANUAL_VERSION"
+    echo -e "${GREEN}✓ Using manually specified version: ${VERSION}${NC}"
+else
+    echo -e "${GREEN}✓ Latest version: ${LATEST_VERSION}${NC}"
+    echo ""
+
+    # Allow custom version
+    read -p "Install version [${LATEST_VERSION}]: " CUSTOM_VERSION
+    VERSION=${CUSTOM_VERSION:-$LATEST_VERSION}
 fi
-
-echo -e "${GREEN}✓ Latest version: ${LATEST_VERSION}${NC}"
-echo ""
-
-# Allow custom version
-read -p "Install version [${LATEST_VERSION}]: " CUSTOM_VERSION
-VERSION=${CUSTOM_VERSION:-$LATEST_VERSION}
 
 echo ""
 echo -e "${BLUE}Downloading Ravact ${VERSION}...${NC}"
@@ -102,22 +118,34 @@ trap "rm -rf $TEMP_DIR" EXIT
 
 BINARY_PATH="$TEMP_DIR/ravact"
 
-echo "URL: $DOWNLOAD_URL"
-echo ""
-
-# Download binary
-if ! curl -L --progress-bar "$DOWNLOAD_URL" -o "$BINARY_PATH" 2>/dev/null; then
-    echo -e "${RED}❌ Failed to download binary${NC}"
-    echo "Please check:"
-    echo "  • Your internet connection"
-    echo "  • The version exists: ${VERSION}"
-    echo "  • Your system is supported: ${BINARY_OS}/${BINARY_ARCH}"
-    exit 1
+if [ -n "$LOCAL_BINARY" ]; then
+    if [ ! -f "$LOCAL_BINARY" ]; then
+        echo -e "${RED}❌ Local binary not found: $LOCAL_BINARY${NC}"
+        exit 1
+    fi
+    echo -e "${YELLOW}⚠️  Using local binary instead of download${NC}"
+    cp "$LOCAL_BINARY" "$BINARY_PATH"
+else
+    echo "URL: $DOWNLOAD_URL"
+    echo ""
 fi
 
-echo ""
-echo -e "${GREEN}✓ Download complete${NC}"
-echo ""
+# Download binary
+if [ -z "$LOCAL_BINARY" ]; then
+    if ! curl -L --progress-bar "$DOWNLOAD_URL" -o "$BINARY_PATH" 2>/dev/null; then
+        echo -e "${RED}❌ Failed to download binary${NC}"
+        echo "Please check:"
+        echo "  • Your internet connection"
+        echo "  • The version exists: ${VERSION}"
+        echo "  • Your system is supported: ${BINARY_OS}/${BINARY_ARCH}"
+        echo "  • Or use --local /path/to/binary"
+        exit 1
+    fi
+
+    echo ""
+    echo -e "${GREEN}✓ Download complete${NC}"
+    echo ""
+fi
 
 # Verify binary
 echo -e "${BLUE}Verifying binary...${NC}"
