@@ -378,3 +378,114 @@ func (sm *SupervisorManager) RestartSupervisor() error {
 	
 	return nil
 }
+
+// UpdateProgram updates an existing program configuration
+func (sm *SupervisorManager) UpdateProgram(name, command, directory, user string, autostart bool) error {
+	configPath := filepath.Join(sm.programsDir, name+".conf")
+
+	// Check if exists
+	if _, err := os.Stat(configPath); err != nil {
+		return fmt.Errorf("program not found: %s", name)
+	}
+
+	// Backup old config
+	backupPath := configPath + ".bak"
+	oldData, _ := os.ReadFile(configPath)
+	if oldData != nil {
+		os.WriteFile(backupPath, oldData, 0644)
+	}
+
+	// Generate new config
+	config := fmt.Sprintf(`[program:%s]
+command=%s
+directory=%s
+user=%s
+autostart=%t
+autorestart=true
+redirect_stderr=true
+stdout_logfile=/var/log/supervisor/%s.log
+stdout_logfile_maxbytes=10MB
+stdout_logfile_backups=10
+`, name, command, directory, user, autostart, name)
+
+	// Write config file
+	if err := os.WriteFile(configPath, []byte(config), 0644); err != nil {
+		// Restore backup on failure
+		if oldData != nil {
+			os.WriteFile(configPath, oldData, 0644)
+		}
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+
+	// Reload supervisor
+	return sm.Reread()
+}
+
+// GetProgramConfig reads a program's full configuration
+func (sm *SupervisorManager) GetProgramConfig(programName string) (string, error) {
+	configPath := filepath.Join(sm.programsDir, programName+".conf")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read config: %w", err)
+	}
+	return string(data), nil
+}
+
+// IsInstalled checks if Supervisor is installed
+func (sm *SupervisorManager) IsInstalled() bool {
+	cmd := exec.Command("which", "supervisorctl")
+	return cmd.Run() == nil
+}
+
+// GetStatus returns the Supervisor service status
+func (sm *SupervisorManager) GetStatus() (string, error) {
+	cmd := exec.Command("systemctl", "status", "supervisor")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(output), nil
+	}
+	return string(output), nil
+}
+
+// DisableXMLRPC disables the XML-RPC server
+func (sm *SupervisorManager) DisableXMLRPC() error {
+	data, err := os.ReadFile(sm.configPath)
+	if err != nil {
+		return fmt.Errorf("failed to read config: %w", err)
+	}
+
+	lines := strings.Split(string(data), "\n")
+	var newLines []string
+	inInetSection := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		
+		if strings.HasPrefix(trimmed, "[inet_http_server]") {
+			inInetSection = true
+			// Comment out the section header
+			newLines = append(newLines, ";"+line)
+			continue
+		}
+		
+		if strings.HasPrefix(trimmed, "[") && inInetSection {
+			inInetSection = false
+		}
+		
+		// Comment out lines in inet section
+		if inInetSection && trimmed != "" && !strings.HasPrefix(trimmed, ";") {
+			newLines = append(newLines, ";"+line)
+		} else {
+			newLines = append(newLines, line)
+		}
+	}
+
+	// Write back
+	newConfig := strings.Join(newLines, "\n")
+	if err := os.WriteFile(sm.configPath, []byte(newConfig), 0644); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+
+	// Restart supervisor
+	return sm.RestartSupervisor()
+}
