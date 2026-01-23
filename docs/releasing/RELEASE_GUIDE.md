@@ -104,6 +104,12 @@ Users can customize before publishing.
 curl -sSL https://raw.githubusercontent.com/iperamuna/ravact/main/scripts/install.sh | sudo bash
 ```
 
+#### Option 1b: Local Binary Install (Offline Testing)
+
+```bash
+sudo bash ./install.sh --local /path/to/ravact-linux-arm64
+```
+
 #### Option 2: Manual Download and Execute
 
 ```bash
