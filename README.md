@@ -25,10 +25,13 @@
 
 ### 🔧 Service Configuration
 - **Redis Cache** - Configure authentication, port, test connections
-- **MySQL** *(Coming Soon)* - Database and user management
-- **PostgreSQL** *(Coming Soon)* - Database and role management
-- **PHP-FPM** *(Coming Soon)* - Pool configuration
-- **Supervisor** *(Coming Soon)* - Process management
+- **MySQL** *(In Development)* - Database management, password/port configuration, user management
+- **PostgreSQL** *(In Development)* - Database management, performance tuning, user management
+- **PHP-FPM** *(In Development)* - Pool management, worker configuration, PM modes
+- **Supervisor** *(In Development)* - Process management, XML-RPC configuration
+
+> **Note:** Database, PHP-FPM, and Supervisor features have complete backend implementation.
+> UI screens are currently being refactored to match the project's Model pattern. See [TODO.md](TODO.md) for details.
 
 ### 👥 User Management
 - **Create/Delete Users** - Manage system users with home directories
@@ -112,8 +115,16 @@ Comprehensive documentation is available in the [docs](docs/) directory:
 
 ### Getting Started
 - [Quickstart Guide](docs/getting-started/QUICKSTART.md)
-- [Quick Summary](docs/getting-started/QUICK_SUMMARY.md)
-- [Docker Quick Start](docs/getting-started/QUICK_DOCKER_START.md)
+
+### Testing
+- [M1 Mac Testing with Multipass](docs/testing/M1_MAC_MULTIPASS_TESTING.md) - Test on Apple Silicon
+- [AMD64/Intel Testing](docs/testing/AMD64_INTEL_TESTING.md) - Test on real hardware
+
+### Features
+- [Database Management Guide](docs/features/DATABASE_MANAGEMENT.md) - MySQL & PostgreSQL
+- [PHP-FPM & Supervisor Guide](docs/features/PHPFPM_SUPERVISOR_GUIDE.md)
+- [FrankenPHP Guide](docs/features/FRANKENPHP_GUIDE.md)
+- [User Management Guide](docs/features/TEST_USER_MANAGEMENT.md)
 
 ### Setup & Installation
 - [Docker Setup](docs/setup/DOCKER_SETUP.md)
