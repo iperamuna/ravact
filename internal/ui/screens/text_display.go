@@ -1,58 +1,81 @@
 package screens
 
 import (
-	"strings"
-
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/iperamuna/ravact/internal/ui/theme"
 )
 
-// TextDisplayScreen displays text content with a title
-type textDisplayScreen struct {
+// TextDisplayModel represents a text display screen
+type TextDisplayModel struct {
+	theme      *theme.Theme
+	width      int
+	height     int
 	title      string
 	content    string
-	returnTo   tea.Model
+	returnScreen ScreenType
 }
 
-func NewTextDisplayScreen(title, content string, returnTo tea.Model) *textDisplayScreen {
-	return &textDisplayScreen{
-		title:    title,
-		content:  content,
-		returnTo: returnTo,
+// NewTextDisplayModel creates a new text display model
+func NewTextDisplayModel(title, content string, returnScreen ScreenType) TextDisplayModel {
+	return TextDisplayModel{
+		theme:        theme.DefaultTheme(),
+		title:        title,
+		content:      content,
+		returnScreen: returnScreen,
 	}
 }
 
-func (m *textDisplayScreen) Init() tea.Cmd {
+func (m TextDisplayModel) Init() tea.Cmd {
 	return nil
 }
 
-func (m *textDisplayScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m TextDisplayModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		return m, nil
+
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
-		case "esc", "enter":
-			if m.returnTo != nil {
-				return m.returnTo, nil
+		case "esc", "enter", "backspace":
+			return m, func() tea.Msg {
+				return NavigateMsg{Screen: m.returnScreen}
 			}
-			return NewMainMenuScreen(), nil
 		}
 	}
 
 	return m, nil
 }
 
-func (m *textDisplayScreen) View() string {
-	var b strings.Builder
+func (m TextDisplayModel) View() string {
+	if m.width == 0 {
+		return "Loading..."
+	}
 
-	b.WriteString(theme.HeaderStyle.Render(m.title))
-	b.WriteString("\n\n")
+	header := m.theme.Title.Render(m.title)
+	content := m.theme.MenuItem.Render(m.content)
+	help := m.theme.Help.Render("esc/enter: back • q: quit")
 
-	b.WriteString(m.content)
-	b.WriteString("\n\n")
+	sections := []string{
+		header,
+		"",
+		content,
+		"",
+		help,
+	}
 
-	b.WriteString(theme.HelpStyle.Render("esc/enter: back • q: quit"))
+	contentSection := lipgloss.JoinVertical(lipgloss.Left, sections...)
+	bordered := m.theme.BorderStyle.Render(contentSection)
 
-	return b.String()
+	return lipgloss.Place(
+		m.width,
+		m.height,
+		lipgloss.Center,
+		lipgloss.Center,
+		bordered,
+	)
 }
