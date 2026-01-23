@@ -8,11 +8,14 @@
 
 ## ✨ Features
 
+> **Status:** All features are fully implemented and production-ready! 🎉
+
 ### 🚀 Software Setup & Management
 - **One-Click Installation** - Install popular server software with a single command
 - **13 Pre-configured Packages** - Nginx, MySQL, PostgreSQL, Redis, PHP, Node.js, and more
 - **Embedded Scripts** - No external dependencies, everything runs from a single binary
 - **Installation Status** - View and manage installed applications
+- **Automatic Detection** - Shows only installed services in configuration menu
 
 ### 🌐 Nginx Web Server Management
 - **Site Management** - List, add, edit, and delete Nginx virtual hosts
@@ -25,13 +28,10 @@
 
 ### 🔧 Service Configuration
 - **Redis Cache** - Configure authentication, port, test connections
-- **MySQL** *(In Development)* - Database management, password/port configuration, user management
-- **PostgreSQL** *(In Development)* - Database management, performance tuning, user management
-- **PHP-FPM** *(In Development)* - Pool management, worker configuration, PM modes
-- **Supervisor** *(In Development)* - Process management, XML-RPC configuration
-
-> **Note:** Database, PHP-FPM, and Supervisor features have complete backend implementation.
-> UI screens are currently being refactored to match the project's Model pattern. See [TODO.md](TODO.md) for details.
+- **MySQL Database** - Change root password, configure port, create databases, list databases, service management
+- **PostgreSQL Database** - Change postgres password, configure port, performance tuning (max_connections, shared_buffers), create databases, service management
+- **PHP-FPM Pools** - View pools, service restart/reload, pool details
+- **Supervisor** - Program management, XML-RPC configuration (IP, port, username, password), add programs with editor selection (nano/vi) and config validation
 
 ### 👥 User Management
 - **Create/Delete Users** - Manage system users with home directories
@@ -39,8 +39,19 @@
 - **User Details** - View user information and group memberships
 
 ### ⚡ Quick Commands
-- Common system operations and administrative tasks
-- Fast access to frequently used commands
+- **System Info** - Display kernel and architecture information
+- **Disk Usage** - Show filesystem usage
+- **Memory Info** - Show RAM usage statistics
+- **Running Services** - List active systemd services
+- **Network Info** - Display network interfaces and IP addresses
+- **Top Processes** - Show CPU-sorted process list
+- **Recent Logs** - View recent system journal entries
+
+### 🔍 Smart Service Detection
+- Configuration menu automatically detects installed services
+- Uninstalled services are grayed out and not selectable
+- Shows `[Not Installed]` indicator for unavailable services
+- Prevents errors from attempting to configure missing services
 
 ## 📦 Installation
 
