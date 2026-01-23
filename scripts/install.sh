@@ -229,5 +229,5 @@ echo ""
 
 echo -e "${GREEN}✅ Installation successful!${NC}"
 echo ""
-echo "You can now run: ${BLUE}sudo ravact${NC}"
+echo -e "You can now run: ${BLUE}sudo ravact${NC}"
 echo ""
