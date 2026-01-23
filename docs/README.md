@@ -35,6 +35,7 @@ Contributing to Ravact or building from source.
 
 - **[Development Guide](development/DEVELOPMENT.md)** - Set up development environment and contribute
 - **[Scripts README](scripts/SCRIPTS_README.md)** - Overview of automation scripts
+- **[Release Guide](releasing/RELEASE_GUIDE.md)** - Release process and install script
 
 ### 🆘 Troubleshooting
 Having issues? Check these guides.
