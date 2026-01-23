@@ -55,7 +55,15 @@
 
 ## 📦 Installation
 
-### Quick Start (Linux)
+### Recommended (One-Command Install)
+
+```bash
+curl -sSL https://raw.githubusercontent.com/iperamuna/ravact/main/scripts/install.sh | sudo bash
+```
+
+Installs the correct binary for your OS/architecture to `/usr/local/bin/ravact`.
+
+### Manual Download (Linux)
 
 ```bash
 # Download the latest release for your architecture
@@ -130,6 +138,7 @@ Comprehensive documentation is available in the [docs](docs/) directory:
 ### Testing
 - [M1 Mac Testing with Multipass](docs/testing/M1_MAC_MULTIPASS_TESTING.md) - Test on Apple Silicon
 - [AMD64/Intel Testing](docs/testing/AMD64_INTEL_TESTING.md) - Test on real hardware
+- [Complete Test Cases](docs/testing/COMPLETE_TEST_CASES.md) - 40+ comprehensive test cases
 
 ### Features
 - [Database Management Guide](docs/features/DATABASE_MANAGEMENT.md) - MySQL & PostgreSQL
@@ -162,8 +171,10 @@ Comprehensive documentation is available in the [docs](docs/) directory:
 - [macOS Limitations](docs/troubleshooting/MACOS_LIMITATIONS.md)
 
 ### Project Information
+- [Release Guide](docs/releasing/RELEASE_GUIDE.md)
 - [Project Status](docs/project/PROJECT_STATUS.md)
 - [Changelog](docs/project/CHANGELOG.md)
+- [Work Session Summary](docs/project/WORK_SESSION_SUMMARY.md)
 
 ## 🛠️ Technology Stack
 
