@@ -82,29 +82,33 @@ BINARY_NAME="ravact-${BINARY_OS}-${BINARY_ARCH}"
 echo -e "${GREEN}✓ Will download: ${BINARY_NAME}${NC}"
 echo ""
 
-# Get latest version
-echo -e "${BLUE}Fetching latest release information...${NC}"
-
-LATEST_VERSION=$(curl -s https://api.github.com/repos/iperamuna/ravact/releases/latest | grep -o '"tag_name": "[^"]*"' | cut -d'"' -f4)
-
-if [ -z "$LATEST_VERSION" ]; then
-    echo -e "${YELLOW}⚠️  Failed to fetch latest version from GitHub${NC}"
-    echo "This may indicate no internet access or GitHub API is blocked."
-    echo ""
-    read -p "Enter version to install (e.g., v1.0.0): " MANUAL_VERSION
-    if [ -z "$MANUAL_VERSION" ]; then
-        echo -e "${RED}❌ No version provided. Exiting.${NC}"
-        exit 1
-    fi
-    VERSION="$MANUAL_VERSION"
-    echo -e "${GREEN}✓ Using manually specified version: ${VERSION}${NC}"
+# Get latest version (skip if using local binary)
+if [ -n "$LOCAL_BINARY" ]; then
+    VERSION="local"
 else
-    echo -e "${GREEN}✓ Latest version: ${LATEST_VERSION}${NC}"
-    echo ""
+    echo -e "${BLUE}Fetching latest release information...${NC}"
 
-    # Allow custom version
-    read -p "Install version [${LATEST_VERSION}]: " CUSTOM_VERSION
-    VERSION=${CUSTOM_VERSION:-$LATEST_VERSION}
+    LATEST_VERSION=$(curl -s https://api.github.com/repos/iperamuna/ravact/releases/latest | grep -o '"tag_name": "[^"]*"' | cut -d'"' -f4)
+
+    if [ -z "$LATEST_VERSION" ]; then
+        echo -e "${YELLOW}⚠️  Failed to fetch latest version from GitHub${NC}"
+        echo "This may indicate no internet access or GitHub API is blocked."
+        echo ""
+        read -p "Enter version to install (e.g., v1.0.0): " MANUAL_VERSION
+        if [ -z "$MANUAL_VERSION" ]; then
+            echo -e "${RED}❌ No version provided. Exiting.${NC}"
+            exit 1
+        fi
+        VERSION="$MANUAL_VERSION"
+        echo -e "${GREEN}✓ Using manually specified version: ${VERSION}${NC}"
+    else
+        echo -e "${GREEN}✓ Latest version: ${LATEST_VERSION}${NC}"
+        echo ""
+
+        # Allow custom version
+        read -p "Install version [${LATEST_VERSION}]: " CUSTOM_VERSION
+        VERSION=${CUSTOM_VERSION:-$LATEST_VERSION}
+    fi
 fi
 
 echo ""
