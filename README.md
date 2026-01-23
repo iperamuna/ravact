@@ -67,7 +67,7 @@ Installs the correct binary for your OS/architecture to `/usr/local/bin/ravact`.
 
 ```bash
 # Download the latest release for your architecture
-wget https://github.com/iperamuna/ravact/releases/latest/download/ravact-linux-amd64
+curl -L https://github.com/iperamuna/ravact/releases/latest/download/ravact-linux-amd64 -o ravact-linux-amd64
 
 # Make it executable
 chmod +x ravact-linux-amd64
