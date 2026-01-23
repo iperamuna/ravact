@@ -63,7 +63,7 @@ func NewModel() Model {
 	
 	return Model{
 		currentScreen:  screens.SplashScreen,
-		splash:         screens.NewSplashModel(),
+		splash:         screens.NewSplashModel(Version),
 		mainMenu:       screens.NewMainMenuModel(Version),
 		setupMenu:      screens.NewSetupMenuModel("assets/scripts"),
 		installedApps:  screens.NewInstalledAppsModel("assets/scripts"),

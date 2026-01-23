@@ -15,13 +15,15 @@ type SplashModel struct {
 	width   int
 	height  int
 	counter int
+	version string
 }
 
 // NewSplashModel creates a new splash screen model
-func NewSplashModel() SplashModel {
+func NewSplashModel(version string) SplashModel {
 	return SplashModel{
 		theme:   theme.DefaultTheme(),
 		counter: 0,
+		version: version,
 	}
 }
 
@@ -62,7 +64,7 @@ func (m SplashModel) View() string {
 	subtitle := m.theme.Subtitle.Render("Linux Server Management TUI")
 
 	// Version info with architecture
-	versionText := fmt.Sprintf("Version 0.1.0 (%s/%s)", runtime.GOOS, runtime.GOARCH)
+	versionText := fmt.Sprintf("Version %s (%s/%s)", m.version, runtime.GOOS, runtime.GOARCH)
 	version := m.theme.InfoStyle.Render(versionText)
 
 	// Tagline
