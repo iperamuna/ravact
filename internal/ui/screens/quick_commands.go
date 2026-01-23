@@ -2,6 +2,7 @@ package screens
 
 import (
 	"fmt"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -157,9 +158,14 @@ func (m QuickCommandsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter", " ":
 			if len(m.commands) > 0 {
 				selectedCmd := m.commands[m.cursor]
+				// Build proper command string
+				cmdStr := selectedCmd.Command
+				if len(selectedCmd.Args) > 0 {
+					cmdStr = selectedCmd.Command + " " + strings.Join(selectedCmd.Args, " ")
+				}
 				return m, func() tea.Msg {
 					return ExecutionStartMsg{
-						Command:     fmt.Sprintf("%s %v", selectedCmd.Command, selectedCmd.Args),
+						Command:     cmdStr,
 						Description: selectedCmd.Description,
 					}
 				}
