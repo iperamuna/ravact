@@ -31,6 +31,8 @@ const (
 	PostgreSQLPortScreen
 	PHPFPMManagementScreen
 	SupervisorManagementScreen
+	SupervisorXMLRPCConfigScreen
+	SupervisorAddProgramScreen
 )
 
 // NavigateMsg is sent when navigating between screens

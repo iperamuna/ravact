@@ -45,6 +45,8 @@ type Model struct {
 	postgresqlPort       screens.PostgreSQLPortModel
 	phpfpmManagement screens.PHPFPMManagementModel
 	supervisorManagement screens.SupervisorManagementModel
+	supervisorXMLRPCConfig screens.SupervisorXMLRPCConfigModel
+	supervisorAddProgram screens.SupervisorAddProgramModel
 	quickCommands  screens.QuickCommandsModel
 	execution      screens.ExecutionModel
 	configEditorActive string // "add_site" or "site_details"
@@ -254,6 +256,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case screens.SupervisorManagementScreen:
 			// Initialize Supervisor management screen
 			m.supervisorManagement = screens.NewSupervisorManagementModel()
+			// Handle success message from sub-screens
+			if msg.Data != nil {
+				if data, ok := msg.Data.(map[string]interface{}); ok {
+					if success, ok := data["success"].(string); ok {
+						m.supervisorManagement.SetSuccess(success)
+					}
+				}
+			}
+		
+		case screens.SupervisorXMLRPCConfigScreen:
+			// Initialize XML-RPC config screen
+			if msg.Data != nil {
+				if data, ok := msg.Data.(map[string]interface{}); ok {
+					if manager, ok := data["manager"].(*system.SupervisorManager); ok {
+						m.supervisorXMLRPCConfig = screens.NewSupervisorXMLRPCConfigModel(manager)
+					}
+				}
+			}
+		
+		case screens.SupervisorAddProgramScreen:
+			// Initialize add program screen
+			if msg.Data != nil {
+				if data, ok := msg.Data.(map[string]interface{}); ok {
+					if manager, ok := data["manager"].(*system.SupervisorManager); ok {
+						m.supervisorAddProgram = screens.NewSupervisorAddProgramModel(manager)
+					}
+				}
+			}
 		
 		case screens.RedisPasswordScreen:
 			// Initialize Redis password screen
@@ -464,6 +494,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		model, cmd = m.supervisorManagement.Update(msg)
 		m.supervisorManagement = model.(screens.SupervisorManagementModel)
 	
+	case screens.SupervisorXMLRPCConfigScreen:
+		var model tea.Model
+		model, cmd = m.supervisorXMLRPCConfig.Update(msg)
+		m.supervisorXMLRPCConfig = model.(screens.SupervisorXMLRPCConfigModel)
+	
+	case screens.SupervisorAddProgramScreen:
+		var model tea.Model
+		model, cmd = m.supervisorAddProgram.Update(msg)
+		m.supervisorAddProgram = model.(screens.SupervisorAddProgramModel)
+	
 	case screens.RedisPasswordScreen:
 		var model tea.Model
 		model, cmd = m.redisPassword.Update(msg)
@@ -538,6 +578,10 @@ func (m Model) View() string {
 		return m.phpfpmManagement.View()
 	case screens.SupervisorManagementScreen:
 		return m.supervisorManagement.View()
+	case screens.SupervisorXMLRPCConfigScreen:
+		return m.supervisorXMLRPCConfig.View()
+	case screens.SupervisorAddProgramScreen:
+		return m.supervisorAddProgram.View()
 	case screens.RedisPasswordScreen:
 		return m.redisPassword.View()
 	case screens.RedisPortScreen:

@@ -29,8 +29,10 @@ func NewSupervisorManagementModel() SupervisorManagementModel {
 	
 	actions := []string{
 		"List All Programs",
-		"Restart Supervisor",
+		"Add New Program",
+		"Configure XML-RPC",
 		"View XML-RPC Config",
+		"Restart Supervisor",
 		"← Back to Configurations",
 	}
 	
@@ -89,6 +91,26 @@ func (m SupervisorManagementModel) executeAction() (SupervisorManagementModel, t
 		} else {
 			m.programs = programs
 			m.success = fmt.Sprintf("✓ Found %d programs", len(programs))
+		}
+
+	case "Add New Program":
+		return m, func() tea.Msg {
+			return NavigateMsg{
+				Screen: SupervisorAddProgramScreen,
+				Data: map[string]interface{}{
+					"manager": m.manager,
+				},
+			}
+		}
+
+	case "Configure XML-RPC":
+		return m, func() tea.Msg {
+			return NavigateMsg{
+				Screen: SupervisorXMLRPCConfigScreen,
+				Data: map[string]interface{}{
+					"manager": m.manager,
+				},
+			}
 		}
 
 	case "Restart Supervisor":
@@ -199,4 +221,9 @@ func (m SupervisorManagementModel) View() string {
 		lipgloss.Center,
 		bordered,
 	)
+}
+
+// SetSuccess sets a success message (called when returning from sub-screens)
+func (m *SupervisorManagementModel) SetSuccess(msg string) {
+	m.success = msg
 }
