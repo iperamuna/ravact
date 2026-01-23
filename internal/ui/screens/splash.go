@@ -68,6 +68,10 @@ func (m SplashModel) View() string {
 	// Tagline
 	tagline := m.theme.DescriptionStyle.Render("Power and Control for Your Server Infrastructure")
 
+	// Author info
+	author := m.theme.DescriptionStyle.Render("Created by Indunil Peramuna")
+	github := m.theme.InfoStyle.Render("https://github.com/iperamuna/ravact")
+
 	// Help text
 	help := m.theme.Help.Render("Press any key to continue...")
 
@@ -81,6 +85,9 @@ func (m SplashModel) View() string {
 		tagline,
 		"",
 		version,
+		"",
+		author,
+		github,
 		"",
 		"",
 		help,
