@@ -2,6 +2,7 @@ package screens
 
 import (
 	"fmt"
+	"os/exec"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -26,49 +27,67 @@ type ConfigMenuModel struct {
 	items  []ConfigMenuItem
 }
 
+// isServiceInstalled checks if a service is installed
+func isServiceInstalled(serviceName string) bool {
+	cmd := exec.Command("systemctl", "list-unit-files", serviceName+".service")
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return len(output) > 0
+}
+
 // NewConfigMenuModel creates a new configuration menu model
 func NewConfigMenuModel() ConfigMenuModel {
+	// Check service installation status
+	nginxInstalled := isServiceInstalled("nginx")
+	redisInstalled := isServiceInstalled("redis-server") || isServiceInstalled("redis")
+	mysqlInstalled := isServiceInstalled("mysql")
+	postgresqlInstalled := isServiceInstalled("postgresql")
+	phpfpmInstalled := isServiceInstalled("php8.3-fpm") || isServiceInstalled("php8.2-fpm") || isServiceInstalled("php8.1-fpm")
+	supervisorInstalled := isServiceInstalled("supervisor")
+	
 	items := []ConfigMenuItem{
 		{
 			ID:          "nginx",
 			Name:        "Nginx Web Server",
-			Description: "Manage sites, virtual hosts, and SSL certificates",
-			Available:   true, // Always show
+			Description: getDescription(nginxInstalled, "Manage sites, virtual hosts, and SSL certificates"),
+			Available:   nginxInstalled,
 			Screen:      NginxConfigScreen,
 		},
 		{
 			ID:          "redis",
 			Name:        "Redis Cache",
-			Description: "Configure Redis server settings and authentication",
-			Available:   true,
+			Description: getDescription(redisInstalled, "Configure Redis server settings and authentication"),
+			Available:   redisInstalled,
 			Screen:      RedisConfigScreen,
 		},
 		{
 			ID:          "mysql",
 			Name:        "MySQL Database",
-			Description: "Manage MySQL databases, passwords, and port configuration",
-			Available:   true,
+			Description: getDescription(mysqlInstalled, "Manage MySQL databases, passwords, and port configuration"),
+			Available:   mysqlInstalled,
 			Screen:      MySQLManagementScreen,
 		},
 		{
 			ID:          "postgresql",
 			Name:        "PostgreSQL Database",
-			Description: "Manage PostgreSQL databases, passwords, and performance tuning",
-			Available:   true,
+			Description: getDescription(postgresqlInstalled, "Manage PostgreSQL databases, passwords, and performance tuning"),
+			Available:   postgresqlInstalled,
 			Screen:      PostgreSQLManagementScreen,
 		},
 		{
 			ID:          "php",
 			Name:        "PHP-FPM Pools",
-			Description: "Manage PHP-FPM pools and worker process configuration",
-			Available:   true,
+			Description: getDescription(phpfpmInstalled, "Manage PHP-FPM pools and worker process configuration"),
+			Available:   phpfpmInstalled,
 			Screen:      PHPFPMManagementScreen,
 		},
 		{
 			ID:          "supervisor",
 			Name:        "Supervisor",
-			Description: "Manage supervisor programs and XML-RPC configuration",
-			Available:   true,
+			Description: getDescription(supervisorInstalled, "Manage supervisor programs and XML-RPC configuration"),
+			Available:   supervisorInstalled,
 			Screen:      SupervisorManagementScreen,
 		},
 	}
@@ -78,6 +97,14 @@ func NewConfigMenuModel() ConfigMenuModel {
 		items:  items,
 		cursor: 0,
 	}
+}
+
+// getDescription returns description with installation status
+func getDescription(installed bool, desc string) string {
+	if installed {
+		return desc
+	}
+	return desc + " (Not Installed)"
 }
 
 // Init initializes the configuration menu
@@ -149,7 +176,7 @@ func (m ConfigMenuModel) View() string {
 		// Build item display
 		itemName := item.Name
 		if !item.Available {
-			itemName += " " + m.theme.DescriptionStyle.Render("(Coming Soon)")
+			itemName += " " + m.theme.WarningStyle.Render("[Not Installed]")
 		}
 
 		var renderedItem string
@@ -157,6 +184,7 @@ func (m ConfigMenuModel) View() string {
 			if item.Available {
 				renderedItem = m.theme.SelectedItem.Render(fmt.Sprintf("%s%s", cursor, itemName))
 			} else {
+				// Dim style for disabled items
 				renderedItem = m.theme.DescriptionStyle.Render(fmt.Sprintf("%s%s", cursor, itemName))
 			}
 		} else {
