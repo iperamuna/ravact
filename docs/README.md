@@ -2,58 +2,45 @@
 
 Welcome to the Ravact documentation! This guide will help you get started with Ravact and understand all its features.
 
+---
+
 ## 📖 Table of Contents
 
 ### 🚀 Getting Started
 New to Ravact? Start here!
 
 - **[Quickstart Guide](getting-started/QUICKSTART.md)** - Get up and running in 5 minutes
-- **[Quick Summary](getting-started/QUICK_SUMMARY.md)** - Overview of features and capabilities
-- **[Docker Quick Start](getting-started/QUICK_DOCKER_START.md)** - Run Ravact in Docker for testing
+
+### 🧪 Testing
+Test Ravact on different platforms.
+
+- **[M1 Mac Testing with Multipass](testing/M1_MAC_MULTIPASS_TESTING.md)** - Complete guide for testing on Apple Silicon Macs using Multipass VMs
+- **[AMD64/Intel Testing](testing/AMD64_INTEL_TESTING.md)** - Comprehensive guide for testing on real AMD64/Intel hardware
 
 ### ⚙️ Setup & Installation
-Detailed installation guides for different environments.
+Installation and setup guides.
 
-- **[Docker Setup](setup/DOCKER_SETUP.md)** - Complete Docker installation guide
-- **[AMD64 Setup Summary](setup/AMD64_SETUP_SUMMARY.md)** - Intel/AMD 64-bit Linux setup
-- **[Development VM Setup](setup/DEV_VM_SETUP.md)** - Set up a development VM
-- **[Setup Scripts Guide](setup/SETUP_SCRIPTS_GUIDE.md)** - Understanding the setup scripts
+- **[Setup Scripts Guide](setup/SETUP_SCRIPTS_GUIDE.md)** - Understanding and using automated setup scripts
 
 ### ✨ Features
 Learn about specific Ravact features.
 
+- **[Database Management](features/DATABASE_MANAGEMENT.md)** - MySQL and PostgreSQL management guide
+- **[PHP-FPM & Supervisor](features/PHPFPM_SUPERVISOR_GUIDE.md)** - PHP-FPM pool and Supervisor program management
 - **[FrankenPHP Guide](features/FRANKENPHP_GUIDE.md)** - Using FrankenPHP with Ravact
 - **[User Management](features/TEST_USER_MANAGEMENT.md)** - User and sudo management guide
 
 ### 💻 Development
 Contributing to Ravact or building from source.
 
-- **[Development Guide](development/DEVELOPMENT.md)** - Set up development environment
-- **[Build Summary](development/BUILD_SUMMARY.md)** - Build process and compilation
-- **[Docker Workflow](development/DOCKER_WORKFLOW.md)** - Development with Docker
-- **[Fixes Applied](development/FIXES_APPLIED.md)** - History of bug fixes and improvements
-
-### 🧪 Testing
-Testing guides and reports.
-
-- **[Quick Test](testing/QUICK_TEST.md)** - Quick testing checklist
-- **[Test Report](testing/TEST_REPORT.md)** - Comprehensive test results
-- **[Real AMD64 Testing](testing/REAL_AMD64_TESTING.md)** - Testing on real AMD64 hardware
-- **[VM Test Instructions](testing/VM_TEST_INSTRUCTIONS.md)** - Testing in virtual machines
+- **[Development Guide](development/DEVELOPMENT.md)** - Set up development environment and contribute
+- **[Scripts README](scripts/SCRIPTS_README.md)** - Overview of automation scripts
 
 ### 🆘 Troubleshooting
 Having issues? Check these guides.
 
 - **[Troubleshooting Guide](troubleshooting/TROUBLESHOOTING.md)** - Common issues and solutions
 - **[macOS Limitations](troubleshooting/MACOS_LIMITATIONS.md)** - Known limitations on macOS
-
-### 🔧 Scripts & Utilities
-Documentation for helper scripts.
-
-- **[Scripts README](scripts/SCRIPTS_README.md)** - Overview of utility scripts
-- **[Multipass Guide](scripts/MULTIPASS_GUIDE.md)** - Using Multipass for VMs
-- **[UTM Troubleshooting](scripts/UTM_TROUBLESHOOTING.md)** - UTM VM issues
-- **[VM Setup README](scripts/VM_SETUP_README.md)** - Virtual machine setup guide
 
 ### 📊 Project Information
 Project status, roadmap, and changes.
@@ -65,251 +52,169 @@ Project status, roadmap, and changes.
 
 ## 🎯 Quick Navigation
 
-### For Users
-1. **First time?** → [Quickstart Guide](getting-started/QUICKSTART.md)
-2. **Installing on server?** → [Setup Guides](setup/)
+### For First-Time Users
+1. **Installing Ravact?** → [Quickstart Guide](getting-started/QUICKSTART.md)
+2. **Testing on M1 Mac?** → [M1 Mac Testing](testing/M1_MAC_MULTIPASS_TESTING.md)
 3. **Need help?** → [Troubleshooting](troubleshooting/TROUBLESHOOTING.md)
 
 ### For Developers
 1. **Want to contribute?** → [Development Guide](development/DEVELOPMENT.md)
-2. **Building from source?** → [Build Summary](development/BUILD_SUMMARY.md)
-3. **Testing changes?** → [Testing Guides](testing/)
+2. **Testing on AMD64?** → [AMD64 Testing Guide](testing/AMD64_INTEL_TESTING.md)
+3. **Using scripts?** → [Scripts README](scripts/SCRIPTS_README.md)
 
-### For Specific Features
-1. **Nginx Sites** → Built-in, see Main Menu → Configurations → Nginx
-2. **Redis Config** → Built-in, see Main Menu → Configurations → Redis
-3. **User Management** → Built-in, see Main Menu → User Management
-4. **SSL Certificates** → Nginx Configuration → Add/Manage SSL
+### For Configuration Management
+Access all features via: **Main Menu → Configurations**
+
+1. **Nginx Sites** → Configurations → Nginx Web Server
+2. **Redis** → Configurations → Redis Cache
+3. **MySQL** → Configurations → MySQL Database
+4. **PostgreSQL** → Configurations → PostgreSQL Database
+5. **PHP-FPM Pools** → Configurations → PHP-FPM Pools
+6. **Supervisor** → Configurations → Supervisor
+7. **SSL Certificates** → Nginx Configuration → SSL Options
 
 ---
 
 ## 📋 Feature Status
 
 ### ✅ Fully Implemented
-- **Setup Automation** - Install 13 software packages
-- **Nginx Management** - Complete site and SSL management
-- **Redis Configuration** - Password, port, connection testing
-- **User Management** - Add/remove users, sudo access
-- **Editor Integration** - nano and vi support
 
-### 🔄 In Progress
-- **Supervisor Configuration** - Process management (manager created)
-- **MySQL Management** - Database and user management
-- **PostgreSQL Management** - Database and role management
-- **PHP Configuration** - PHP-FPM pool management
+**Core Management:**
+- Setup Automation - Install and configure server components
+- Nginx Management - Complete site and SSL management
+- Redis Configuration - Password, port, and connection testing
+- User Management - Add/remove users with sudo access
 
-### 🎯 Planned
-- Apache configuration support
-- Firewall management UI
-- Backup and restore tools
-- System monitoring dashboard
+**Database Management:**
+- MySQL - Password, port, database creation, user management
+- PostgreSQL - Password, port, performance tuning, database creation
+
+**Application Management:**
+- PHP-FPM - Pool management, worker tuning, PM modes
+- Supervisor - Program management, XML-RPC configuration
+
+### 🎨 User Interface
+- Terminal UI (TUI) with Bubble Tea framework
+- Intuitive navigation with keyboard shortcuts
+- Real-time status updates
+- Secure password input (masked)
+- Error handling and validation
+
+### 🔧 Supported Software
+- **Web Servers:** Nginx
+- **Databases:** MySQL, PostgreSQL
+- **PHP:** PHP-FPM (multiple versions), FrankenPHP
+- **Caching:** Redis, Dragonfly
+- **Process Management:** Supervisor
+- **JavaScript:** Node.js
+- **Version Control:** Git
+- **SSL:** Certbot (Let's Encrypt)
+- **Editors:** nano, vi/vim
 
 ---
 
 ## 🏗️ Architecture
 
-Ravact is built with a clean, modular architecture:
+### Target Platform
+- **Operating System:** Linux only (Ubuntu 24.04 LTS recommended)
+- **Architectures:** AMD64 (x86_64), ARM64 (aarch64)
+- **System Requirements:** systemd, sudo, standard Linux utilities
 
-```
-ravact/
-├── cmd/ravact/          # Main application entry point
-├── internal/
-│   ├── config/          # Configuration management
-│   ├── executor/        # Script execution
-│   ├── models/          # Data models
-│   ├── setup/           # Setup logic
-│   ├── system/          # System managers (nginx, redis, etc.)
-│   └── ui/              # Terminal UI components
-│       ├── components/  # Reusable UI components
-│       ├── screens/     # Application screens
-│       └── theme/       # Visual theming
-├── assets/
-│   ├── configs/         # Configuration templates
-│   └── scripts/         # Setup scripts (embedded)
-└── docs/                # Documentation (you are here!)
-```
+### Why Linux Only?
+Ravact directly manages Linux system services using:
+- `systemd` for service management
+- Linux-specific configuration paths
+- Native Linux package managers (apt)
+- Linux filesystem structure
+
+**For macOS users:** Use Multipass to run Ubuntu VMs (see [M1 Mac Testing Guide](testing/M1_MAC_MULTIPASS_TESTING.md))
 
 ---
 
-## 🎨 Screenshots
+## 🚦 Testing Workflow
 
-### Main Menu
-```
-┌─────────────────────────────────────────────┐
-│      RAVACT v0.1.0 - Main Menu              │
-│                                             │
-│  ▶ Setup                                    │
-│    Install server software packages         │
-│                                             │
-│    Installed Applications                   │
-│    View and manage installed services       │
-│                                             │
-│    Configurations                           │
-│    Manage service configurations            │
-│                                             │
-│    Quick Commands                           │
-│    Execute common administrative tasks      │
-│                                             │
-│    User Management                          │
-│    Manage users, groups, and sudo           │
-└─────────────────────────────────────────────┘
-```
+### For Apple Silicon (M1/M2/M3) Mac Users
 
-### Nginx Site Management
-- Interactive site creation with templates
-- SSL certificate management
-- Enable/disable sites with one click
-- Edit configurations with nano or vi
+1. **Install Multipass:**
+   ```bash
+   brew install --cask multipass
+   ```
 
-### Redis Configuration
-- Secure password configuration
-- Port management
-- Connection testing
-- Service status monitoring
+2. **Create Ubuntu VM:**
+   ```bash
+   multipass launch 24.04 --name ravact-test --memory 4G --cpus 2
+   ```
 
----
+3. **Build and Test:**
+   ```bash
+   GOOS=linux GOARCH=arm64 go build -o ravact-linux-arm64 ./cmd/ravact
+   multipass transfer ravact-linux-arm64 ravact-test:~/ravact
+   multipass shell ravact-test
+   sudo ./ravact
+   ```
 
-## 🔐 Security
+**See:** [Complete M1 Testing Guide](testing/M1_MAC_MULTIPASS_TESTING.md)
 
-- **Root Access Required** - For system-level operations
-- **Password Security** - Passwords masked in UI, no plaintext logging
-- **SSL Support** - Automated Let's Encrypt or manual certificates
-- **Sudo Management** - Control which users have elevated privileges
+### For AMD64/Intel Hardware
 
----
+1. **Provision Ubuntu Server:**
+   - VPS (DigitalOcean, Linode, Vultr)
+   - Cloud (AWS, Google Cloud, Azure)
+   - Bare metal server
+   - Local VM (VirtualBox, VMware)
 
-## 🌟 Why Ravact?
+2. **Install Dependencies:**
+   ```bash
+   apt install -y mysql-server postgresql php8.3-fpm supervisor nginx
+   ```
 
-### Traditional Approach
-```bash
-# Manual installation
-sudo apt-get install nginx
-sudo nano /etc/nginx/sites-available/mysite
-sudo ln -s /etc/nginx/sites-available/mysite /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl reload nginx
-sudo certbot --nginx -d mydomain.com
-# ... many more commands
-```
+3. **Build and Run:**
+   ```bash
+   go build -o ravact ./cmd/ravact
+   sudo ./ravact
+   ```
 
-### With Ravact
-```bash
-sudo ./ravact
-# Use arrow keys and Enter
-# Visual interface guides you through everything
-# No need to remember commands or file paths
-```
-
-**Benefits:**
-- ✅ **Faster** - Complete tasks in seconds, not minutes
-- ✅ **Safer** - Visual confirmation before executing
-- ✅ **Easier** - No need to remember complex commands
-- ✅ **Professional** - Clean, modern interface
-- ✅ **Portable** - Single binary, no dependencies
+**See:** [Complete AMD64 Testing Guide](testing/AMD64_INTEL_TESTING.md)
 
 ---
 
-## 🖥️ System Requirements
+## 📚 Additional Resources
 
-### Minimum Requirements
-- **OS**: Linux (Ubuntu 20.04+, Debian 10+, RHEL 8+, CentOS 8+)
-- **Architecture**: x86_64 (amd64) or ARM64 (aarch64)
-- **RAM**: 512 MB minimum (1 GB recommended)
-- **Disk**: 10 MB for binary, varies by installed software
-- **Privileges**: Root access (sudo) required for installations
+### Documentation
+- **Main README:** [../README.md](../README.md) - Project overview and quick start
+- **Feature Guides:** [features/](features/) - Detailed feature documentation
+- **Testing Guides:** [testing/](testing/) - Platform-specific testing instructions
 
-### Supported Distributions
-- ✅ Ubuntu 20.04, 22.04, 24.04
-- ✅ Debian 10, 11, 12
-- ✅ RHEL/Rocky Linux 8, 9
-- ✅ CentOS 8+
-- ✅ Other systemd-based distributions
-
-### macOS Support
-- **UI**: ✅ Works for testing and development
-- **Setup Features**: ❌ Requires Linux (use Docker or VM)
-- See [macOS Limitations](troubleshooting/MACOS_LIMITATIONS.md)
+### External Links
+- **Repository:** https://github.com/iperamuna/ravact
+- **Go Language:** https://go.dev/
+- **Bubble Tea:** https://github.com/charmbracelet/bubbletea
+- **Multipass:** https://multipass.run/
 
 ---
 
-## 🐛 Troubleshooting
+## 🤝 Contributing
 
-Common issues and solutions:
-
-### "Command not found" or "Permission denied"
-```bash
-# Make sure the binary is executable
-chmod +x ravact
-
-# Run with sudo for installation features
-sudo ./ravact
-```
-
-### Setup scripts fail on macOS
-Ravact setup scripts are designed for Linux. On macOS:
-- Use Docker: `make docker-test`
-- Use a Linux VM: See [VM Setup Guide](docs/scripts/VM_SETUP_README.md)
-- Deploy to a Linux server
-
-### Nginx configuration errors
-- Test config: `sudo nginx -t`
-- Check logs: `sudo tail -f /var/log/nginx/error.log`
-- Use Ravact's built-in test feature
-
-For more help, see the [Troubleshooting Guide](docs/troubleshooting/TROUBLESHOOTING.md).
+We welcome contributions! See the [Development Guide](development/DEVELOPMENT.md) for:
+- Setting up your development environment
+- Code style and conventions
+- Testing requirements
+- Pull request process
 
 ---
 
-## 🚀 Roadmap
+## 📄 License
 
-### Version 0.2.0 (Next Release)
-- [ ] Supervisor configuration UI
-- [ ] MySQL database management
-- [ ] PostgreSQL database management
-- [ ] PHP-FPM pool management
-- [ ] Enhanced monitoring dashboard
-
-### Version 0.3.0
-- [ ] Apache web server support
-- [ ] Firewall management (UFW/iptables)
-- [ ] Backup and restore tools
-- [ ] Docker container management
-
-### Future Versions
-- [ ] Multi-server management
-- [ ] Automated backup scheduling
-- [ ] Performance monitoring
-- [ ] Log viewer and analysis
+See the main repository for license information.
 
 ---
 
 ## 💬 Support
 
-- **Issues**: [GitHub Issues](https://github.com/iperamuna/ravact/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/iperamuna/ravact/discussions)
-- **Documentation**: [docs/](docs/)
+- **Issues:** Report bugs or request features on GitHub
+- **Documentation:** Check this documentation for guides and troubleshooting
+- **Community:** Contribute to discussions and share your experience
 
 ---
 
-## 📈 Statistics
-
-- **Lines of Code**: ~15,000+
-- **Screens**: 25+ interactive screens
-- **Embedded Assets**: 13 scripts + 7 templates
-- **Binary Size**: ~4 MB (all-in-one)
-- **Supported Packages**: 13 pre-configured
-
----
-
-## ⚡ Performance
-
-- **Fast Startup**: < 100ms
-- **Low Memory**: ~20 MB RAM usage
-- **Efficient**: Single binary, no runtime dependencies
-- **Responsive**: Smooth TUI interactions
-
----
-
-**Made with ❤️ for Linux system administrators**
-
-For questions, issues, or contributions, please visit the [GitHub repository](https://github.com/iperamuna/ravact).
+**Last Updated:** January 2026
