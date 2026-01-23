@@ -1,0 +1,124 @@
+{
+  "templates": [
+    {
+      "id": "static",
+      "name": "Static HTML Site",
+      "description": "Basic static HTML/CSS/JS site",
+      "default_index": "index.html",
+      "requires_php": false,
+      "recommended_for": ["Landing pages", "Static sites", "Documentation"]
+    },
+    {
+      "id": "php",
+      "name": "PHP Site",
+      "description": "Generic PHP application with PHP-FPM",
+      "default_index": "index.php",
+      "requires_php": true,
+      "php_version": "8.2",
+      "recommended_for": ["Custom PHP apps", "Legacy PHP sites"]
+    },
+    {
+      "id": "laravel",
+      "name": "Laravel Application",
+      "description": "Laravel PHP framework with optimized routing",
+      "default_index": "index.php",
+      "requires_php": true,
+      "php_version": "8.2",
+      "public_dir": "public",
+      "recommended_for": ["Laravel 8+", "Modern PHP frameworks"],
+      "notes": "Requires public directory and supports URL rewriting"
+    },
+    {
+      "id": "wordpress",
+      "name": "WordPress Site",
+      "description": "WordPress CMS with permalinks and caching",
+      "default_index": "index.php",
+      "requires_php": true,
+      "php_version": "8.0",
+      "recommended_for": ["WordPress", "WooCommerce", "WordPress Multisite"],
+      "notes": "Includes permalink support and static asset caching"
+    },
+    {
+      "id": "symfony",
+      "name": "Symfony Application",
+      "description": "Symfony PHP framework",
+      "default_index": "index.php",
+      "requires_php": true,
+      "php_version": "8.2",
+      "public_dir": "public",
+      "recommended_for": ["Symfony 5+", "API Platform"],
+      "notes": "Similar to Laravel with public directory"
+    },
+    {
+      "id": "nodejs",
+      "name": "Node.js Reverse Proxy",
+      "description": "Reverse proxy to Node.js application",
+      "default_index": null,
+      "requires_php": false,
+      "proxy_port": 3000,
+      "recommended_for": ["Express.js", "Next.js", "Nest.js"],
+      "notes": "Proxies requests to Node.js app running on specified port"
+    },
+    {
+      "id": "spa",
+      "name": "Single Page Application",
+      "description": "SPA (React, Vue, Angular) with fallback routing",
+      "default_index": "index.html",
+      "requires_php": false,
+      "recommended_for": ["React", "Vue.js", "Angular"],
+      "notes": "All routes fallback to index.html for client-side routing"
+    }
+  ],
+  "ssl_options": {
+    "certbot": {
+      "name": "Let's Encrypt (Certbot)",
+      "description": "Free SSL certificate with automatic renewal",
+      "requires_domain": true,
+      "requires_dns": true
+    },
+    "manual": {
+      "name": "Manual SSL Configuration",
+      "description": "Use existing SSL certificates",
+      "requires_domain": false,
+      "requires_dns": false
+    },
+    "none": {
+      "name": "No SSL (HTTP Only)",
+      "description": "HTTP only - not recommended for production",
+      "requires_domain": false,
+      "requires_dns": false
+    }
+  },
+  "recommendations": {
+    "static": {
+      "ssl": true,
+      "caching": true,
+      "gzip": true
+    },
+    "php": {
+      "ssl": true,
+      "php_version": "8.2",
+      "memory_limit": "256M",
+      "max_execution_time": 60
+    },
+    "laravel": {
+      "ssl": true,
+      "php_version": "8.2",
+      "memory_limit": "512M",
+      "worker_mode": "recommended",
+      "cache": "redis"
+    },
+    "wordpress": {
+      "ssl": true,
+      "php_version": "8.0",
+      "memory_limit": "256M",
+      "caching": true,
+      "cache_static": true
+    },
+    "nodejs": {
+      "ssl": true,
+      "websocket_support": true,
+      "proxy_timeout": 60
+    }
+  }
+}

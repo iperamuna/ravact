@@ -1,0 +1,194 @@
+{
+  "php_versions": [
+    "7.4",
+    "8.0",
+    "8.1",
+    "8.2",
+    "8.3"
+  ],
+  "default_version": "8.2",
+  "extension_categories": {
+    "laravel_default": {
+      "name": "Laravel Defaults",
+      "description": "Essential extensions for Laravel applications",
+      "extensions": [
+        "cli",
+        "fpm",
+        "common",
+        "mysql",
+        "pgsql",
+        "sqlite3",
+        "redis",
+        "curl",
+        "gd",
+        "mbstring",
+        "xml",
+        "zip",
+        "bcmath",
+        "intl",
+        "opcache"
+      ]
+    },
+    "database": {
+      "name": "Database Drivers",
+      "description": "Database connection extensions",
+      "extensions": [
+        "mysql",
+        "mysqli",
+        "pgsql",
+        "sqlite3",
+        "pdo",
+        "mongodb",
+        "redis",
+        "memcached"
+      ]
+    },
+    "web": {
+      "name": "Web Development",
+      "description": "Extensions for web applications",
+      "extensions": [
+        "curl",
+        "gd",
+        "imagick",
+        "fileinfo",
+        "exif",
+        "gettext"
+      ]
+    },
+    "data": {
+      "name": "Data Processing",
+      "description": "Data manipulation and processing",
+      "extensions": [
+        "json",
+        "xml",
+        "simplexml",
+        "dom",
+        "xmlreader",
+        "xmlwriter",
+        "yaml",
+        "igbinary",
+        "msgpack"
+      ]
+    },
+    "security": {
+      "name": "Security & Encryption",
+      "description": "Security and cryptography extensions",
+      "extensions": [
+        "openssl",
+        "sodium",
+        "hash",
+        "mcrypt"
+      ]
+    },
+    "performance": {
+      "name": "Performance",
+      "description": "Caching and optimization",
+      "extensions": [
+        "opcache",
+        "apcu",
+        "xdebug",
+        "blackfire"
+      ]
+    },
+    "utilities": {
+      "name": "Utilities",
+      "description": "Utility extensions",
+      "extensions": [
+        "zip",
+        "bz2",
+        "zlib",
+        "iconv",
+        "mbstring",
+        "intl",
+        "bcmath",
+        "gmp",
+        "pcntl",
+        "posix",
+        "shmop",
+        "sysvmsg",
+        "sysvsem",
+        "sysvshm"
+      ]
+    },
+    "advanced": {
+      "name": "Advanced",
+      "description": "Specialized extensions",
+      "extensions": [
+        "ffi",
+        "grpc",
+        "swoole",
+        "rdkafka",
+        "amqp",
+        "ssh2",
+        "ldap",
+        "imap",
+        "snmp",
+        "soap",
+        "tidy",
+        "xsl"
+      ]
+    }
+  },
+  "extension_info": {
+    "cli": {"description": "Command line interface", "required": true},
+    "fpm": {"description": "FastCGI Process Manager", "required": true},
+    "common": {"description": "Common files", "required": true},
+    "mysql": {"description": "MySQL database driver", "laravel": true},
+    "mysqli": {"description": "MySQL improved extension", "laravel": false},
+    "pgsql": {"description": "PostgreSQL database driver", "laravel": true},
+    "sqlite3": {"description": "SQLite3 database driver", "laravel": true},
+    "pdo": {"description": "PHP Data Objects", "laravel": true},
+    "mongodb": {"description": "MongoDB driver", "laravel": false},
+    "redis": {"description": "Redis cache driver", "laravel": true},
+    "memcached": {"description": "Memcached cache driver", "laravel": false},
+    "curl": {"description": "HTTP client library", "laravel": true},
+    "gd": {"description": "Image processing", "laravel": true},
+    "imagick": {"description": "ImageMagick for PHP", "laravel": false},
+    "fileinfo": {"description": "File information", "laravel": true},
+    "exif": {"description": "EXIF metadata", "laravel": false},
+    "gettext": {"description": "Internationalization", "laravel": false},
+    "json": {"description": "JSON processing", "laravel": true},
+    "xml": {"description": "XML processing", "laravel": true},
+    "simplexml": {"description": "SimpleXML parser", "laravel": false},
+    "dom": {"description": "DOM manipulation", "laravel": false},
+    "xmlreader": {"description": "XML reader", "laravel": false},
+    "xmlwriter": {"description": "XML writer", "laravel": false},
+    "yaml": {"description": "YAML parser", "laravel": false},
+    "igbinary": {"description": "Binary serialization", "laravel": false},
+    "msgpack": {"description": "MessagePack serialization", "laravel": false},
+    "openssl": {"description": "SSL/TLS encryption", "laravel": true},
+    "sodium": {"description": "Modern cryptography", "laravel": false},
+    "hash": {"description": "Hashing functions", "laravel": true},
+    "mcrypt": {"description": "Legacy encryption (deprecated)", "laravel": false},
+    "opcache": {"description": "Opcode cache", "laravel": true},
+    "apcu": {"description": "User cache", "laravel": false},
+    "xdebug": {"description": "Debugger and profiler", "laravel": false},
+    "blackfire": {"description": "Performance profiler", "laravel": false},
+    "zip": {"description": "ZIP archive", "laravel": true},
+    "bz2": {"description": "Bzip2 compression", "laravel": false},
+    "zlib": {"description": "Zlib compression", "laravel": false},
+    "iconv": {"description": "Character encoding", "laravel": false},
+    "mbstring": {"description": "Multibyte string", "laravel": true},
+    "intl": {"description": "Internationalization", "laravel": true},
+    "bcmath": {"description": "Arbitrary precision math", "laravel": true},
+    "gmp": {"description": "GNU multiple precision", "laravel": false},
+    "pcntl": {"description": "Process control", "laravel": false},
+    "posix": {"description": "POSIX functions", "laravel": false},
+    "shmop": {"description": "Shared memory", "laravel": false},
+    "sysvmsg": {"description": "System V message queue", "laravel": false},
+    "sysvsem": {"description": "System V semaphores", "laravel": false},
+    "sysvshm": {"description": "System V shared memory", "laravel": false},
+    "ffi": {"description": "Foreign Function Interface", "laravel": false},
+    "grpc": {"description": "gRPC extension", "laravel": false},
+    "swoole": {"description": "Async networking", "laravel": false},
+    "rdkafka": {"description": "Apache Kafka client", "laravel": false},
+    "amqp": {"description": "RabbitMQ/AMQP", "laravel": false},
+    "ssh2": {"description": "SSH2 protocol", "laravel": false},
+    "ldap": {"description": "LDAP directory", "laravel": false},
+    "imap": {"description": "IMAP email", "laravel": false},
+    "snmp": {"description": "SNMP protocol", "laravel": false},
+    "soap": {"description": "SOAP web services", "laravel": false},
+    "tidy": {"description": "HTML tidy", "laravel": false},
+    "xsl": {"description": "XSL transformation", "laravel": false}
+  }
+}

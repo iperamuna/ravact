@@ -1,0 +1,62 @@
+{
+  "id": "nginx-basic",
+  "service_id": "nginx",
+  "name": "Nginx Basic Configuration",
+  "description": "Configure basic Nginx settings for optimal performance",
+  "file_path": "/etc/nginx/nginx.conf",
+  "fields": [
+    {
+      "key": "worker_processes",
+      "label": "Worker Processes",
+      "type": "int",
+      "required": true,
+      "default": 4,
+      "description": "Number of worker processes (usually set to number of CPU cores)"
+    },
+    {
+      "key": "worker_connections",
+      "label": "Worker Connections",
+      "type": "int",
+      "required": true,
+      "default": 1024,
+      "description": "Maximum number of simultaneous connections per worker"
+    },
+    {
+      "key": "keepalive_timeout",
+      "label": "Keepalive Timeout",
+      "type": "int",
+      "required": true,
+      "default": 65,
+      "description": "How long to keep connections alive (in seconds)"
+    },
+    {
+      "key": "client_max_body_size",
+      "label": "Client Max Body Size",
+      "type": "string",
+      "required": true,
+      "default": "20M",
+      "description": "Maximum allowed size of client request body"
+    },
+    {
+      "key": "gzip",
+      "label": "Enable Gzip Compression",
+      "type": "bool",
+      "required": true,
+      "default": true,
+      "description": "Enable or disable gzip compression"
+    },
+    {
+      "key": "log_level",
+      "label": "Error Log Level",
+      "type": "select",
+      "required": true,
+      "default": "warn",
+      "options": ["debug", "info", "notice", "warn", "error", "crit"],
+      "description": "Logging level for error log"
+    }
+  ],
+  "defaults": {
+    "user": "www-data",
+    "pid": "/run/nginx.pid"
+  }
+}
