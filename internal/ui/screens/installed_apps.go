@@ -39,15 +39,25 @@ func NewInstalledAppsModel(scriptsDir string) InstalledAppsModel {
 	// Read scripts from embedded filesystem
 	var scripts []models.SetupScript
 	
+	// Scripts to skip from display
+	skipScripts := map[string]bool{
+		"php-simple": true, // Removed in favor of unified PHP management
+	}
+
 	if EmbeddedFS != (embed.FS{}) {
 		// Read from embedded FS
 		entries, readErr := EmbeddedFS.ReadDir(scriptsDir)
 		if readErr == nil {
 			for _, entry := range entries {
 				if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".sh") {
+					scriptID := strings.TrimSuffix(entry.Name(), ".sh")
+					// Skip excluded scripts
+					if skipScripts[scriptID] {
+						continue
+					}
 					scripts = append(scripts, models.SetupScript{
-						ID:         strings.TrimSuffix(entry.Name(), ".sh"),
-						Name:       strings.TrimSuffix(entry.Name(), ".sh"),
+						ID:         scriptID,
+						Name:       scriptID,
 						ScriptPath: entry.Name(),
 					})
 				}
@@ -82,8 +92,8 @@ func NewInstalledAppsModel(scriptsDir string) InstalledAppsModel {
 			scripts[i].Description = "Modern Redis/Memcached replacement (faster, less memory)"
 			scripts[i].ServiceID = "dragonfly"
 		case "php":
-			scripts[i].Name = "PHP-FPM"
-			scripts[i].Description = "PHP FastCGI Process Manager with extensions"
+			scripts[i].Name = "PHP"
+			scripts[i].Description = "PHP versions and extensions management"
 			scripts[i].ServiceID = "php-fpm"
 		case "frankenphp":
 			scripts[i].Name = "FrankenPHP"
@@ -102,8 +112,8 @@ func NewInstalledAppsModel(scriptsDir string) InstalledAppsModel {
 			scripts[i].Description = "Free SSL/TLS certificates from Let's Encrypt"
 			scripts[i].ServiceID = "certbot"
 		case "git":
-			scripts[i].Name = "Git + SSH Keys"
-			scripts[i].Description = "Version control system with SSH key setup"
+			scripts[i].Name = "Git"
+			scripts[i].Description = "Git Version control system"
 			scripts[i].ServiceID = "git"
 		case "firewall":
 			scripts[i].Name = "Firewall (UFW/firewalld)"

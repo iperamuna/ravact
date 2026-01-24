@@ -60,6 +60,11 @@ func NewMainMenuModel(version string) MainMenuModel {
 			Description: "Manage users, groups, and sudo privileges",
 			Screen:      UserManagementScreen,
 		},
+		{
+			Title:       "Site Commands",
+			Description: "Git, Laravel permissions, and site-specific operations",
+			Screen:      SiteCommandsScreen,
+		},
 	}
 
 	return MainMenuModel{

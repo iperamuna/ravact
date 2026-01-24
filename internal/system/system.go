@@ -253,14 +253,32 @@ func (d *Detector) getTotalDiskMacOS() (uint64, error) {
 
 // IsServiceInstalled checks if a service/package is installed
 func (d *Detector) IsServiceInstalled(serviceName string) (bool, error) {
-	// Try systemctl first
+	// For tools that don't run as services, check binary directly
+	binaryOnlyTools := map[string][]string{
+		"certbot": {"certbot"},
+		"git":     {"git"},
+		"node":    {"node", "nodejs"},
+		"ufw":     {"ufw"},
+	}
+
+	if binaries, isBinaryOnly := binaryOnlyTools[serviceName]; isBinaryOnly {
+		for _, binary := range binaries {
+			cmd := exec.Command("which", binary)
+			if err := cmd.Run(); err == nil {
+				return true, nil
+			}
+		}
+		return false, nil
+	}
+
+	// Try systemctl first for services
 	cmd := exec.Command("systemctl", "list-unit-files", serviceName+".service")
 	output, err := cmd.Output()
 	if err == nil && strings.Contains(string(output), serviceName) {
 		return true, nil
 	}
 
-	// Try which command
+	// Try which command as fallback
 	cmd = exec.Command("which", serviceName)
 	err = cmd.Run()
 	return err == nil, nil
@@ -275,6 +293,18 @@ func (d *Detector) GetServiceStatus(serviceName string) (models.ServiceStatus, e
 	}
 	if !installed {
 		return models.StatusNotInstalled, nil
+	}
+
+	// For tools that don't run as services, just return Installed
+	binaryOnlyTools := map[string]bool{
+		"certbot": true,
+		"git":     true,
+		"node":    true,
+		"ufw":     true,
+	}
+
+	if binaryOnlyTools[serviceName] {
+		return models.StatusInstalled, nil
 	}
 
 	// Check if running via systemctl

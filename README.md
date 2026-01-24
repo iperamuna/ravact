@@ -88,16 +88,21 @@ sudo ./ravact-linux-amd64
 ```bash
 # Clone the repository
 git clone https://github.com/iperamuna/ravact.git
-cd ravact/ravact-go
+cd ravact
 
-# Build for your platform
+# Build for your current platform
 make build
 
-# Or build for specific platform
-make build-linux-amd64
-make build-linux-arm64
+# Or build for all platforms (Linux & macOS, amd64 & arm64)
+make build-all
 
-# Binary will be in dist/ folder
+# Or build for specific platforms
+make build-linux        # Linux amd64
+make build-linux-arm64  # Linux arm64
+make build-darwin       # macOS amd64
+make build-darwin-arm64 # macOS arm64 (Apple Silicon)
+
+# Binaries will be in dist/ folder
 ```
 
 ## 🎯 Quick Start Guide
@@ -133,48 +138,34 @@ make build-linux-arm64
 Comprehensive documentation is available in the [docs](docs/) directory:
 
 ### Getting Started
-- [Quickstart Guide](docs/getting-started/QUICKSTART.md)
+- [Quickstart Guide](docs/getting-started/QUICKSTART.md) - Get up and running in 5 minutes
+
+### Features
+- [Database Management](docs/features/DATABASE_MANAGEMENT.md) - MySQL & PostgreSQL configuration
+- [PHP-FPM & Supervisor](docs/features/PHPFPM_SUPERVISOR_GUIDE.md) - Pool and process management
+- [FrankenPHP Guide](docs/features/FRANKENPHP_GUIDE.md) - Modern PHP server setup
+- [User Management](docs/features/TEST_USER_MANAGEMENT.md) - System user administration
 
 ### Testing
-- [M1 Mac Testing with Multipass](docs/testing/M1_MAC_MULTIPASS_TESTING.md) - Test on Apple Silicon
+- [M1 Mac Testing](docs/testing/M1_MAC_MULTIPASS_TESTING.md) - Test on Apple Silicon with Multipass
 - [AMD64/Intel Testing](docs/testing/AMD64_INTEL_TESTING.md) - Test on real hardware
 - [Complete Test Cases](docs/testing/COMPLETE_TEST_CASES.md) - 40+ comprehensive test cases
 
-### Features
-- [Database Management Guide](docs/features/DATABASE_MANAGEMENT.md) - MySQL & PostgreSQL
-- [PHP-FPM & Supervisor Guide](docs/features/PHPFPM_SUPERVISOR_GUIDE.md)
-- [FrankenPHP Guide](docs/features/FRANKENPHP_GUIDE.md)
-- [User Management Guide](docs/features/TEST_USER_MANAGEMENT.md)
-
-### Setup & Installation
-- [Docker Setup](docs/setup/DOCKER_SETUP.md)
-- [AMD64 Setup](docs/setup/AMD64_SETUP_SUMMARY.md)
-- [Dev VM Setup](docs/setup/DEV_VM_SETUP.md)
-- [Setup Scripts Guide](docs/setup/SETUP_SCRIPTS_GUIDE.md)
-
-### Features
-- [FrankenPHP Guide](docs/features/FRANKENPHP_GUIDE.md)
-- [User Management](docs/features/TEST_USER_MANAGEMENT.md)
+### Setup & Scripts
+- [Setup Scripts Guide](docs/setup/SETUP_SCRIPTS_GUIDE.md) - Automated setup scripts
+- [Scripts Reference](docs/scripts/SCRIPTS_README.md) - All available scripts
 
 ### Development
-- [Development Guide](docs/development/DEVELOPMENT.md)
-- [Build Summary](docs/development/BUILD_SUMMARY.md)
-- [Docker Workflow](docs/development/DOCKER_WORKFLOW.md)
-
-### Testing
-- [Quick Test](docs/testing/QUICK_TEST.md)
-- [Test Report](docs/testing/TEST_REPORT.md)
-- [VM Test Instructions](docs/testing/VM_TEST_INSTRUCTIONS.md)
+- [Development Guide](docs/development/DEVELOPMENT.md) - Contributing and building from source
+- [Release Guide](docs/releasing/RELEASE_GUIDE.md) - Release process
 
 ### Troubleshooting
-- [Troubleshooting Guide](docs/troubleshooting/TROUBLESHOOTING.md)
-- [macOS Limitations](docs/troubleshooting/MACOS_LIMITATIONS.md)
+- [Troubleshooting Guide](docs/troubleshooting/TROUBLESHOOTING.md) - Common issues and solutions
+- [macOS Limitations](docs/troubleshooting/MACOS_LIMITATIONS.md) - Known limitations on macOS
 
-### Project Information
-- [Release Guide](docs/releasing/RELEASE_GUIDE.md)
-- [Project Status](docs/project/PROJECT_STATUS.md)
-- [Changelog](docs/project/CHANGELOG.md)
-- [Work Session Summary](docs/project/WORK_SESSION_SUMMARY.md)
+### Project
+- [Project Status](docs/project/PROJECT_STATUS.md) - Current development status
+- [Changelog](docs/project/CHANGELOG.md) - Version history
 
 ## 🛠️ Technology Stack
 
@@ -218,20 +209,20 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## 📊 Project Status
 
-**Version**: 0.1.0
+**Version**: 0.1.3
 
-**Current Features**:
-- ✅ Complete software setup automation (13 packages)
-- ✅ Full Nginx site management with SSL
-- ✅ Redis configuration
-- ✅ User management
+**All Features Implemented**:
+- ✅ Complete software setup automation (13+ packages)
+- ✅ Full Nginx site management with SSL (Let's Encrypt & manual)
+- ✅ Redis configuration (password, port, connection testing)
+- ✅ MySQL database management (password, port, databases, users)
+- ✅ PostgreSQL database management (password, port, performance tuning)
+- ✅ PHP-FPM pool management (view pools, service control)
+- ✅ Supervisor configuration (programs, XML-RPC)
+- ✅ Firewall management
+- ✅ User management with sudo access
 - ✅ Editor integration (nano/vi)
-
-**Upcoming Features**:
-- 🔄 Supervisor configuration
-- 🔄 MySQL database management
-- 🔄 PostgreSQL database management
-- 🔄 PHP-FPM pool configuration
+- ✅ Quick system commands
 
 ---
 

@@ -37,6 +37,19 @@ func isServiceInstalled(serviceName string) bool {
 	return len(output) > 0
 }
 
+// isFirewallInstalled checks if UFW or firewalld is installed
+func isFirewallInstalled() bool {
+	// Check for ufw binary
+	if cmd := exec.Command("which", "ufw"); cmd.Run() == nil {
+		return true
+	}
+	// Check for firewall-cmd binary (firewalld)
+	if cmd := exec.Command("which", "firewall-cmd"); cmd.Run() == nil {
+		return true
+	}
+	return false
+}
+
 // NewConfigMenuModel creates a new configuration menu model
 func NewConfigMenuModel() ConfigMenuModel {
 	// Check service installation status
@@ -46,6 +59,7 @@ func NewConfigMenuModel() ConfigMenuModel {
 	postgresqlInstalled := isServiceInstalled("postgresql")
 	phpfpmInstalled := isServiceInstalled("php8.3-fpm") || isServiceInstalled("php8.2-fpm") || isServiceInstalled("php8.1-fpm")
 	supervisorInstalled := isServiceInstalled("supervisor")
+	firewallInstalled := isFirewallInstalled()
 	
 	items := []ConfigMenuItem{
 		{
@@ -89,6 +103,13 @@ func NewConfigMenuModel() ConfigMenuModel {
 			Description: getDescription(supervisorInstalled, "Manage supervisor programs and XML-RPC configuration"),
 			Available:   supervisorInstalled,
 			Screen:      SupervisorManagementScreen,
+		},
+		{
+			ID:          "firewall",
+			Name:        "Firewall (UFW/firewalld)",
+			Description: getDescription(firewallInstalled, "Manage firewall rules, ports, and security settings"),
+			Available:   firewallInstalled,
+			Screen:      FirewallManagementScreen,
 		},
 	}
 

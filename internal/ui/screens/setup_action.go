@@ -35,63 +35,143 @@ func NewSetupActionModel(script models.SetupScript, status models.ServiceStatus)
 
 	switch status {
 	case models.StatusNotInstalled:
-		actions = []SetupAction{
-			{
-				ID:          "install",
-				Name:        "Install",
-				Description: fmt.Sprintf("Install %s", script.Name),
-				Command:     fmt.Sprintf("assets/scripts/%s", script.ScriptPath),
-			},
+		// For PHP, navigate to PHP install screen
+		if script.ID == "php" {
+			actions = []SetupAction{
+				{
+					ID:          "install",
+					Name:        "Manage PHP Versions",
+					Description: "Install or remove PHP versions and extensions",
+					Command:     "__php_install__",
+				},
+			}
+		} else if script.ID == "dragonfly" {
+			// For Dragonfly, use special install action that navigates to options screen
+			actions = []SetupAction{
+				{
+					ID:          "install",
+					Name:        "Install",
+					Description: fmt.Sprintf("Install %s (choose installation method)", script.Name),
+					Command:     "__dragonfly_install__", // Special marker for navigation
+				},
+			}
+		} else {
+			actions = []SetupAction{
+				{
+					ID:          "install",
+					Name:        "Install",
+					Description: fmt.Sprintf("Install %s", script.Name),
+					Command:     fmt.Sprintf("assets/scripts/%s", script.ScriptPath),
+				},
+			}
 		}
 
 	case models.StatusInstalled, models.StatusStopped:
-		actions = []SetupAction{
-			{
-				ID:          "reinstall",
-				Name:        "Reinstall / Update",
-				Description: "Reinstall or update to the latest version",
-				Command:     fmt.Sprintf("assets/scripts/%s", script.ScriptPath),
-			},
-			{
-				ID:          "start",
-				Name:        "Start Service",
-				Description: "Start the service",
-				Command:     fmt.Sprintf("systemctl start %s", script.ServiceID),
-			},
-			{
-				ID:          "remove",
-				Name:        "Remove",
-				Description: "Uninstall and remove the service",
-				Command:     fmt.Sprintf("apt-get remove -y %s || yum remove -y %s", script.ServiceID, script.ServiceID),
-			},
+		// For PHP, always navigate to PHP install screen for management
+		if script.ID == "php" {
+			actions = []SetupAction{
+				{
+					ID:          "manage",
+					Name:        "Manage PHP Versions",
+					Description: "Install, remove PHP versions and extensions",
+					Command:     "__php_install__",
+				},
+			}
+		} else if script.ID == "git" || script.ID == "certbot" || script.ID == "node" {
+			// Tools that don't run as services (no start/stop/restart)
+			// Only show reinstall and remove for non-service tools
+			actions = []SetupAction{
+				{
+					ID:          "reinstall",
+					Name:        "Reinstall / Update",
+					Description: "Reinstall or update to the latest version",
+					Command:     fmt.Sprintf("assets/scripts/%s", script.ScriptPath),
+				},
+				{
+					ID:          "remove",
+					Name:        "Remove",
+					Description: "Uninstall the package",
+					Command:     fmt.Sprintf("apt-get remove -y %s || yum remove -y %s", script.ServiceID, script.ServiceID),
+				},
+			}
+		} else {
+			actions = []SetupAction{
+				{
+					ID:          "reinstall",
+					Name:        "Reinstall / Update",
+					Description: "Reinstall or update to the latest version",
+					Command:     fmt.Sprintf("assets/scripts/%s", script.ScriptPath),
+				},
+				{
+					ID:          "start",
+					Name:        "Start Service",
+					Description: "Start the service",
+					Command:     fmt.Sprintf("systemctl start %s", script.ServiceID),
+				},
+				{
+					ID:          "remove",
+					Name:        "Remove",
+					Description: "Uninstall and remove the service",
+					Command:     fmt.Sprintf("apt-get remove -y %s || yum remove -y %s", script.ServiceID, script.ServiceID),
+				},
+			}
 		}
 
 	case models.StatusRunning:
-		actions = []SetupAction{
-			{
-				ID:          "restart",
-				Name:        "Restart Service",
-				Description: "Restart the service",
-				Command:     fmt.Sprintf("systemctl restart %s", script.ServiceID),
-			},
-			{
-				ID:          "stop",
-				Name:        "Stop Service",
-				Description: "Stop the service",
-				Command:     fmt.Sprintf("systemctl stop %s", script.ServiceID),
-			},
-			{
-				ID:          "reinstall",
-				Name:        "Reinstall / Update",
-				Description: "Reinstall or update to the latest version",
-				Command:     fmt.Sprintf("assets/scripts/%s", script.ScriptPath),
-			},
-			{
-				ID:          "remove",
-				Name:        "Remove",
-				Description: "Uninstall and remove the service (will stop it first)",
-				Command:     fmt.Sprintf("systemctl stop %s && apt-get remove -y %s || yum remove -y %s", script.ServiceID, script.ServiceID, script.ServiceID),
-			},
+		// For PHP, always navigate to PHP install screen for management
+		if script.ID == "php" {
+			actions = []SetupAction{
+				{
+					ID:          "manage",
+					Name:        "Manage PHP Versions",
+					Description: "Install, remove PHP versions and extensions",
+					Command:     "__php_install__",
+				},
+			}
+		} else if script.ID == "git" || script.ID == "certbot" || script.ID == "node" {
+			// Tools that don't run as services (no start/stop/restart)
+			// Only show reinstall and remove for non-service tools
+			actions = []SetupAction{
+				{
+					ID:          "reinstall",
+					Name:        "Reinstall / Update",
+					Description: "Reinstall or update to the latest version",
+					Command:     fmt.Sprintf("assets/scripts/%s", script.ScriptPath),
+				},
+				{
+					ID:          "remove",
+					Name:        "Remove",
+					Description: "Uninstall the package",
+					Command:     fmt.Sprintf("apt-get remove -y %s || yum remove -y %s", script.ServiceID, script.ServiceID),
+				},
+			}
+		} else {
+			actions = []SetupAction{
+				{
+					ID:          "restart",
+					Name:        "Restart Service",
+					Description: "Restart the service",
+					Command:     fmt.Sprintf("systemctl restart %s", script.ServiceID),
+				},
+				{
+					ID:          "stop",
+					Name:        "Stop Service",
+					Description: "Stop the service",
+					Command:     fmt.Sprintf("systemctl stop %s", script.ServiceID),
+				},
+				{
+					ID:          "reinstall",
+					Name:        "Reinstall / Update",
+					Description: "Reinstall or update to the latest version",
+					Command:     fmt.Sprintf("assets/scripts/%s", script.ScriptPath),
+				},
+				{
+					ID:          "remove",
+					Name:        "Remove",
+					Description: "Uninstall and remove the service (will stop it first)",
+					Command:     fmt.Sprintf("systemctl stop %s && apt-get remove -y %s || yum remove -y %s", script.ServiceID, script.ServiceID, script.ServiceID),
+				},
+			}
 		}
 
 	case models.StatusFailed:
@@ -173,6 +253,21 @@ func (m SetupActionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter", " ":
 			if len(m.actions) > 0 {
 				selectedAction := m.actions[m.cursor]
+				
+				// Handle special navigation for PHP install
+				if selectedAction.Command == "__php_install__" {
+					return m, func() tea.Msg {
+						return NavigateMsg{Screen: PHPInstallScreen}
+					}
+				}
+				
+				// Handle special navigation for Dragonfly install
+				if selectedAction.Command == "__dragonfly_install__" {
+					return m, func() tea.Msg {
+						return NavigateMsg{Screen: DragonflyInstallScreen}
+					}
+				}
+				
 				return m, func() tea.Msg {
 					return ExecutionStartMsg{
 						Command:     selectedAction.Command,

@@ -52,6 +52,9 @@ type ExecutionOutputMsg struct {
 	Line string
 }
 
+// SpinnerTickMsg is sent to update the spinner animation
+type SpinnerTickMsg struct{}
+
 // NewExecutionModel creates a new execution model
 func NewExecutionModel(command, description string, returnScreen ScreenType) ExecutionModel {
 	return ExecutionModel{
@@ -63,13 +66,43 @@ func NewExecutionModel(command, description string, returnScreen ScreenType) Exe
 		maxLines:     1000, // Keep last 1000 lines
 		autoScroll:   true,
 		returnScreen: returnScreen,
+		startTime:    time.Now(), // Set start time here so spinner works correctly
 	}
+}
+
+// spinnerTick returns a command that sends a tick message for spinner animation
+func spinnerTick() tea.Cmd {
+	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+		return SpinnerTickMsg{}
+	})
 }
 
 // Init initializes the execution screen
 func (m ExecutionModel) Init() tea.Cmd {
-	m.startTime = time.Now()
-	return m.executeCommand
+	return tea.Batch(m.executeCommand, spinnerTick())
+}
+
+// extractScriptPath extracts the embedded script path from a command
+// Returns the script path and any environment variable prefix, or empty strings if not an embedded script
+func extractScriptPath(command string) (scriptPath string, envPrefix string) {
+	// Check if command contains an embedded script path
+	if !strings.Contains(command, "assets/scripts/") || !strings.HasSuffix(command, ".sh") {
+		return "", ""
+	}
+	
+	// Find the script path in the command
+	// Handle cases like "ENV_VAR=value assets/scripts/script.sh" or just "assets/scripts/script.sh"
+	idx := strings.Index(command, "assets/scripts/")
+	if idx == -1 {
+		return "", ""
+	}
+	
+	scriptPath = command[idx:]
+	if idx > 0 {
+		envPrefix = strings.TrimSpace(command[:idx])
+	}
+	
+	return scriptPath, envPrefix
 }
 
 // executeCommand runs the command and streams output
@@ -80,7 +113,9 @@ func (m ExecutionModel) executeCommand() tea.Msg {
 
 	// Check if this is a script path (embedded)
 	var cmd *exec.Cmd
-	if strings.HasSuffix(m.command, ".sh") && strings.Contains(m.command, "assets/scripts/") {
+	scriptPath, envPrefix := extractScriptPath(m.command)
+	
+	if scriptPath != "" {
 		// Check OS compatibility for setup scripts
 		if runtime.GOOS != "linux" {
 			errorMsg := fmt.Sprintf("⚠ Setup scripts are designed for Linux only.\n\nCurrent OS: %s\n\n", runtime.GOOS)
@@ -102,7 +137,7 @@ func (m ExecutionModel) executeCommand() tea.Msg {
 		}
 		
 		// Execute embedded script by reading content and piping to bash
-		scriptContent, err := EmbeddedFS.ReadFile(m.command)
+		scriptContent, err := EmbeddedFS.ReadFile(scriptPath)
 		if err != nil {
 			return ExecutionCompleteMsg{
 				Success: false,
@@ -112,7 +147,13 @@ func (m ExecutionModel) executeCommand() tea.Msg {
 		}
 
 		// Run bash with script piped to stdin
+		// If there's an env prefix, prepend it to set environment variables
 		cmd = exec.CommandContext(ctx, "bash", "-s")
+		if envPrefix != "" {
+			// Parse environment variables from prefix (e.g., "VAR1=val1 VAR2=val2")
+			envVars := strings.Fields(envPrefix)
+			cmd.Env = append(cmd.Environ(), envVars...)
+		}
 		cmd.Stdin = bytes.NewReader(scriptContent)
 	} else {
 		// Regular command execution
@@ -200,6 +241,13 @@ func (m ExecutionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		return m, nil
+
+	case SpinnerTickMsg:
+		// Continue ticking only while running
+		if m.state == ExecutionRunning {
+			return m, spinnerTick()
+		}
 		return m, nil
 
 	case ExecutionCompleteMsg:

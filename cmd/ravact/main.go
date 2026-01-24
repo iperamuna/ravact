@@ -11,7 +11,7 @@ import (
 	"github.com/iperamuna/ravact/internal/ui/screens"
 )
 
-var Version = "0.1.0"
+var Version = "0.1.3"
 
 //go:embed assets
 var embeddedAssets embed.FS
@@ -47,6 +47,16 @@ type Model struct {
 	supervisorManagement screens.SupervisorManagementModel
 	supervisorXMLRPCConfig screens.SupervisorXMLRPCConfigModel
 	supervisorAddProgram screens.SupervisorAddProgramModel
+	firewallManagement screens.FirewallManagementModel
+	dragonflyInstall screens.DragonflyInstallModel
+	siteCommands   screens.SiteCommandsModel
+	gitManagement  screens.GitManagementModel
+	laravelPerms   screens.LaravelPermissionsModel
+	nodeVersion    screens.NodeVersionModel
+	phpVersion     screens.PHPVersionModel
+	phpInstall     screens.PHPInstallModel
+	phpExtensions  screens.PHPExtensionsModel
+	frankenphpClassic screens.FrankenPHPClassicModel
 	quickCommands  screens.QuickCommandsModel
 	execution      screens.ExecutionModel
 	configEditorActive string // "add_site" or "site_details"
@@ -54,6 +64,7 @@ type Model struct {
 	height         int
 	scriptsDir     string
 	configsDir     string
+	copyMode       bool // When true, mouse is released for text selection
 }
 
 // NewModel creates a new application model
@@ -101,6 +112,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Global quit keys
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
+		}
+		
+		// Toggle copy mode with Ctrl+Y
+		if msg.String() == "ctrl+y" {
+			m.copyMode = !m.copyMode
+			if m.copyMode {
+				// Disable mouse to allow text selection
+				return m, tea.DisableMouse
+			}
+			// Re-enable mouse
+			return m, tea.EnableMouseCellMotion
 		}
 
 	case screens.NavigateMsg:
@@ -284,6 +306,62 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
+		
+		case screens.FirewallManagementScreen:
+			// Initialize Firewall management screen
+			m.firewallManagement = screens.NewFirewallManagementModel()
+		
+		case screens.DragonflyInstallScreen:
+			// Initialize Dragonfly installation options screen
+			m.dragonflyInstall = screens.NewDragonflyInstallModel()
+		
+		case screens.SiteCommandsScreen:
+			// Initialize Site Commands screen
+			m.siteCommands = screens.NewSiteCommandsModel()
+		
+		case screens.GitManagementScreen:
+			// Initialize Git management screen
+			m.gitManagement = screens.NewGitManagementModel()
+		
+		case screens.LaravelPermissionsScreen:
+			// Initialize Laravel permissions screen
+			m.laravelPerms = screens.NewLaravelPermissionsModel()
+		
+		case screens.NodeVersionScreen:
+			// Initialize Node version screen with command type
+			commandType := "npm_install"
+			if msg.Data != nil {
+				if data, ok := msg.Data.(map[string]interface{}); ok {
+					if ct, ok := data["commandType"].(string); ok {
+						commandType = ct
+					}
+				}
+			}
+			m.nodeVersion = screens.NewNodeVersionModel(commandType)
+		
+		case screens.PHPVersionScreen:
+			// Initialize PHP version screen with command type
+			commandType := "composer_install"
+			if msg.Data != nil {
+				if data, ok := msg.Data.(map[string]interface{}); ok {
+					if ct, ok := data["commandType"].(string); ok {
+						commandType = ct
+					}
+				}
+			}
+			m.phpVersion = screens.NewPHPVersionModel(commandType)
+		
+		case screens.PHPInstallScreen:
+			// Initialize PHP installation screen
+			m.phpInstall = screens.NewPHPInstallModel()
+		
+		case screens.PHPExtensionsScreen:
+			// Initialize PHP extensions screen
+			m.phpExtensions = screens.NewPHPExtensionsModel()
+		
+		case screens.FrankenPHPClassicScreen:
+			// Initialize FrankenPHP Classic Mode screen
+			m.frankenphpClassic = screens.NewFrankenPHPClassicModel()
 		
 		case screens.RedisPasswordScreen:
 			// Initialize Redis password screen
@@ -504,6 +582,56 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		model, cmd = m.supervisorAddProgram.Update(msg)
 		m.supervisorAddProgram = model.(screens.SupervisorAddProgramModel)
 	
+	case screens.FirewallManagementScreen:
+		var model tea.Model
+		model, cmd = m.firewallManagement.Update(msg)
+		m.firewallManagement = model.(screens.FirewallManagementModel)
+	
+	case screens.DragonflyInstallScreen:
+		var model tea.Model
+		model, cmd = m.dragonflyInstall.Update(msg)
+		m.dragonflyInstall = model.(screens.DragonflyInstallModel)
+	
+	case screens.SiteCommandsScreen:
+		var model tea.Model
+		model, cmd = m.siteCommands.Update(msg)
+		m.siteCommands = model.(screens.SiteCommandsModel)
+	
+	case screens.GitManagementScreen:
+		var model tea.Model
+		model, cmd = m.gitManagement.Update(msg)
+		m.gitManagement = model.(screens.GitManagementModel)
+	
+	case screens.LaravelPermissionsScreen:
+		var model tea.Model
+		model, cmd = m.laravelPerms.Update(msg)
+		m.laravelPerms = model.(screens.LaravelPermissionsModel)
+	
+	case screens.NodeVersionScreen:
+		var model tea.Model
+		model, cmd = m.nodeVersion.Update(msg)
+		m.nodeVersion = model.(screens.NodeVersionModel)
+	
+	case screens.PHPVersionScreen:
+		var model tea.Model
+		model, cmd = m.phpVersion.Update(msg)
+		m.phpVersion = model.(screens.PHPVersionModel)
+	
+	case screens.PHPInstallScreen:
+		var model tea.Model
+		model, cmd = m.phpInstall.Update(msg)
+		m.phpInstall = model.(screens.PHPInstallModel)
+	
+	case screens.PHPExtensionsScreen:
+		var model tea.Model
+		model, cmd = m.phpExtensions.Update(msg)
+		m.phpExtensions = model.(screens.PHPExtensionsModel)
+	
+	case screens.FrankenPHPClassicScreen:
+		var model tea.Model
+		model, cmd = m.frankenphpClassic.Update(msg)
+		m.frankenphpClassic = model.(screens.FrankenPHPClassicModel)
+	
 	case screens.RedisPasswordScreen:
 		var model tea.Model
 		model, cmd = m.redisPassword.Update(msg)
@@ -520,75 +648,108 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View renders the current screen
 func (m Model) View() string {
+	var view string
 	switch m.currentScreen {
 	case screens.SplashScreen:
-		return m.splash.View()
+		view = m.splash.View()
 	case screens.MainMenuScreen:
-		return m.mainMenu.View()
+		view = m.mainMenu.View()
 	case screens.SetupMenuScreen:
-		return m.setupMenu.View()
+		view = m.setupMenu.View()
 	case screens.SetupActionScreen:
-		return m.setupAction.View()
+		view = m.setupAction.View()
 	case screens.InstalledAppsScreen:
-		return m.installedApps.View()
+		view = m.installedApps.View()
 	case screens.UserManagementScreen:
-		return m.userManagement.View()
+		view = m.userManagement.View()
 	case screens.UserDetailsScreen:
-		return m.userDetails.View()
+		view = m.userDetails.View()
 	case screens.AddUserScreen:
-		return m.addUser.View()
+		view = m.addUser.View()
 	case screens.ConfigMenuScreen:
-		return m.configMenu.View()
+		view = m.configMenu.View()
 	case screens.NginxConfigScreen:
-		return m.nginxConfig.View()
+		view = m.nginxConfig.View()
 	case screens.QuickCommandsScreen:
-		return m.quickCommands.View()
+		view = m.quickCommands.View()
 	case screens.ExecutionScreen:
-		return m.execution.View()
+		view = m.execution.View()
 	case screens.ConfigEditorScreen:
 		// Determine which sub-screen to render based on flag
 		if m.configEditorActive == "add_site" {
-			return m.addSite.View()
+			view = m.addSite.View()
 		} else if m.configEditorActive == "site_details" {
-			return m.siteDetails.View()
+			view = m.siteDetails.View()
+		} else {
+			// Fallback to prevent crash
+			view = "Loading configuration screen..."
 		}
-		// Fallback to prevent crash
-		return "Loading configuration screen..."
 	case screens.SSLOptionsScreen:
-		return m.sslOptions.View()
+		view = m.sslOptions.View()
 	case screens.SSLManualScreen:
-		return m.sslManual.View()
+		view = m.sslManual.View()
 	case screens.EditorSelectionScreen:
-		return m.editorSelection.View()
+		view = m.editorSelection.View()
 	case screens.RedisConfigScreen:
-		return m.redisConfig.View()
+		view = m.redisConfig.View()
 	case screens.MySQLManagementScreen:
-		return m.mysqlManagement.View()
+		view = m.mysqlManagement.View()
 	case screens.MySQLPasswordScreen:
-		return m.mysqlPassword.View()
+		view = m.mysqlPassword.View()
 	case screens.MySQLPortScreen:
-		return m.mysqlPort.View()
+		view = m.mysqlPort.View()
 	case screens.PostgreSQLManagementScreen:
-		return m.postgresqlManagement.View()
+		view = m.postgresqlManagement.View()
 	case screens.PostgreSQLPasswordScreen:
-		return m.postgresqlPassword.View()
+		view = m.postgresqlPassword.View()
 	case screens.PostgreSQLPortScreen:
-		return m.postgresqlPort.View()
+		view = m.postgresqlPort.View()
 	case screens.PHPFPMManagementScreen:
-		return m.phpfpmManagement.View()
+		view = m.phpfpmManagement.View()
 	case screens.SupervisorManagementScreen:
-		return m.supervisorManagement.View()
+		view = m.supervisorManagement.View()
 	case screens.SupervisorXMLRPCConfigScreen:
-		return m.supervisorXMLRPCConfig.View()
+		view = m.supervisorXMLRPCConfig.View()
 	case screens.SupervisorAddProgramScreen:
-		return m.supervisorAddProgram.View()
+		view = m.supervisorAddProgram.View()
+	case screens.FirewallManagementScreen:
+		view = m.firewallManagement.View()
+	case screens.DragonflyInstallScreen:
+		view = m.dragonflyInstall.View()
+	case screens.SiteCommandsScreen:
+		view = m.siteCommands.View()
+	case screens.GitManagementScreen:
+		view = m.gitManagement.View()
+	case screens.LaravelPermissionsScreen:
+		view = m.laravelPerms.View()
+	case screens.NodeVersionScreen:
+		view = m.nodeVersion.View()
+	case screens.PHPVersionScreen:
+		view = m.phpVersion.View()
+	case screens.PHPInstallScreen:
+		view = m.phpInstall.View()
+	case screens.PHPExtensionsScreen:
+		view = m.phpExtensions.View()
+	case screens.FrankenPHPClassicScreen:
+		view = m.frankenphpClassic.View()
 	case screens.RedisPasswordScreen:
-		return m.redisPassword.View()
+		view = m.redisPassword.View()
 	case screens.RedisPortScreen:
-		return m.redisPort.View()
+		view = m.redisPort.View()
 	default:
-		return "Unknown screen"
+		view = "Unknown screen"
 	}
+	return m.wrapWithCopyModeIndicator(view)
+}
+
+// wrapWithCopyModeIndicator adds a copy mode indicator to the view if copy mode is active
+func (m Model) wrapWithCopyModeIndicator(view string) string {
+	if !m.copyMode {
+		return view
+	}
+	// Add a highlighted banner at the bottom
+	copyModeBanner := "\n\033[43;30m 📋 COPY MODE - Select text with mouse, Ctrl+Y to exit \033[0m"
+	return view + copyModeBanner
 }
 
 func main() {

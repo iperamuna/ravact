@@ -74,14 +74,10 @@ case "$OS" in
         ;;
 esac
 
-# Check installation method
-echo "Select installation method:"
-echo ""
-echo "  1. Binary Installation (Recommended)"
-echo "  2. Docker Installation"
-echo ""
-read -p "Enter choice [1-2] (default: 1): " install_method
-install_method=${install_method:-1}
+# Installation method - default to binary (recommended)
+# Set DRAGONFLY_INSTALL_METHOD=2 for Docker installation
+install_method="${DRAGONFLY_INSTALL_METHOD:-1}"
+echo "Installation method: $([ "$install_method" = "2" ] && echo "Docker" || echo "Binary (Recommended)")"
 
 if [ "$install_method" = "1" ]; then
     # Binary Installation

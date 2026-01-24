@@ -2,7 +2,7 @@
 
 # Binary name
 BINARY_NAME=ravact
-VERSION?=0.1.0
+VERSION?=0.1.3
 BUILD_DIR=dist
 
 # Go parameters
@@ -53,14 +53,22 @@ build-linux-arm64:
 build-darwin:
 	@echo "Building for macOS amd64..."
 	@mkdir -p $(BUILD_DIR)
+	@echo "Copying assets for embedding..."
+	@rm -rf cmd/ravact/assets
+	@cp -r assets cmd/ravact/
 	GOOS=darwin GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 ./cmd/ravact
+	@rm -rf cmd/ravact/assets
 	@echo "Built: $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64"
 
 ## build-darwin-arm64: Build for macOS arm64 (Apple Silicon)
 build-darwin-arm64:
 	@echo "Building for macOS arm64..."
 	@mkdir -p $(BUILD_DIR)
+	@echo "Copying assets for embedding..."
+	@rm -rf cmd/ravact/assets
+	@cp -r assets cmd/ravact/
 	GOOS=darwin GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 ./cmd/ravact
+	@rm -rf cmd/ravact/assets
 	@echo "Built: $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64"
 
 ## build-all: Build for all target platforms

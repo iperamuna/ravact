@@ -28,6 +28,7 @@ Learn about specific Ravact features.
 - **[Database Management](features/DATABASE_MANAGEMENT.md)** - MySQL and PostgreSQL management guide
 - **[PHP-FPM & Supervisor](features/PHPFPM_SUPERVISOR_GUIDE.md)** - PHP-FPM pool and Supervisor program management
 - **[FrankenPHP Guide](features/FRANKENPHP_GUIDE.md)** - Using FrankenPHP with Ravact
+- **[FrankenPHP Classic Setup](features/FRANKENPHP_CLASSIC_SETUP.md)** - Classic mode setup with systemd
 - **[User Management](features/TEST_USER_MANAGEMENT.md)** - User and sudo management guide
 
 ### 💻 Development
@@ -44,7 +45,7 @@ Having issues? Check these guides.
 - **[macOS Limitations](troubleshooting/MACOS_LIMITATIONS.md)** - Known limitations on macOS
 
 ### 📊 Project Information
-Project status, roadmap, and changes.
+Project status and version history.
 
 - **[Project Status](project/PROJECT_STATUS.md)** - Current development status
 - **[Changelog](project/CHANGELOG.md)** - Version history and changes

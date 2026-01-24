@@ -33,6 +33,17 @@ const (
 	SupervisorManagementScreen
 	SupervisorXMLRPCConfigScreen
 	SupervisorAddProgramScreen
+	FirewallManagementScreen
+	DragonflyInstallScreen
+	SiteCommandsScreen
+	GitManagementScreen
+	LaravelPermissionsScreen
+	NodeVersionScreen
+	PHPVersionScreen
+	PHPInstallScreen
+	PHPExtensionsScreen
+	PHPManagementScreen
+	FrankenPHPClassicScreen
 )
 
 // NavigateMsg is sent when navigating between screens

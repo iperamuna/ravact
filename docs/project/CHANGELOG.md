@@ -5,7 +5,7 @@ All notable changes to Ravact will be documented in this file.
 ## [0.1.2] - 2026-01-23
 
 ### Added
-- **Version Number in Main Menu**: Now displays "RAVACT v0.1.0 - Main Menu"
+- **Version Number in Main Menu**: Now displays version in Main Menu header
 - **Enhanced System Information**: 
   - Added Architecture (x86_64, arm64, etc.)
   - Added RAM size (formatted as GB/MB) - **Works on both macOS and Linux**
@@ -83,15 +83,29 @@ All notable changes to Ravact will be documented in this file.
 - Navigation issue where screens showed "Loading..." after transition
 - Window size now properly propagated to new screens on navigation
 
+## [0.1.3] - 2026-01-24
+
+### Added
+- **Complete Database Management**:
+  - MySQL: Password management, port configuration, database creation, user management
+  - PostgreSQL: Password management, port configuration, performance tuning (max_connections, shared_buffers)
+- **PHP-FPM Pool Management**: View pools, service restart/reload, pool details
+- **Supervisor Management**: Program management, XML-RPC configuration (IP, port, username, password)
+- **Firewall Management**: UFW firewall configuration
+- **Full SSL Certificate Management**: Let's Encrypt (certbot) and manual certificate support
+- **13+ Setup Scripts**: Nginx, MySQL, PostgreSQL, Redis, PHP, Node.js, Git, Supervisor, Certbot, FrankenPHP, Dragonfly
+
+### Fixed
+- **Makefile build-all**: Darwin builds now correctly copy assets for embedding
+
 ## [Unreleased]
 
 ### Planned Features
-- Configuration editor screen with form-based editing
-- More setup scripts (MySQL, PHP, Redis, PostgreSQL)
-- Service monitoring dashboard
-- Log tailing with live updates
-- SSL certificate management
+- Remote server management via SSH
+- Multi-server support
+- Service monitoring dashboard with live updates
 - Backup and restore functionality
+- Web dashboard companion
 
 ---
 
