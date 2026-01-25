@@ -1,5 +1,7 @@
 # Setup Scripts Guide
 
+[← Back to Documentation](../README.md)
+
 ## Overview
 
 Ravact includes 10 professional installation scripts with advanced features like interactive configuration, version selection, and extension management.

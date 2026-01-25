@@ -1,4 +1,6 @@
-# User Management Fix - Test Results
+# User Management Guide
+
+[← Back to Documentation](../README.md)
 
 ## Issue Fixed ✅
 

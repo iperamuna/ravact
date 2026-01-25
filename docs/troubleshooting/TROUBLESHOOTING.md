@@ -1,5 +1,7 @@
 # Troubleshooting Guide
 
+[← Back to Documentation](../README.md)
+
 ## Common Issues and Solutions
 
 ### TUI shows "Loading..." after navigation

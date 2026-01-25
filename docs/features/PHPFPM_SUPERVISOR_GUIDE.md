@@ -1,5 +1,7 @@
 # PHP-FPM Pool & Supervisor Management
 
+[← Back to Documentation](../README.md)
+
 Complete guide for managing PHP-FPM pools and Supervisor programs in Ravact.
 
 ---

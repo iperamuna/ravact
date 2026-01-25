@@ -1,5 +1,7 @@
 # macOS Limitations
 
+[← Back to Documentation](../README.md)
+
 ## Overview
 
 Ravact is designed for **Linux server management** and has limited functionality when run directly on macOS. This is by design, as the tool manages Linux-specific services and configurations.

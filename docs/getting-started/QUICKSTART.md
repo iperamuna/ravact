@@ -1,5 +1,7 @@
 # Ravact Quick Start Guide
 
+[← Back to Documentation](../README.md)
+
 Get Ravact up and running in 5 minutes!
 
 ## Prerequisites

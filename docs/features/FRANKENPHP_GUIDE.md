@@ -1,5 +1,7 @@
 # FrankenPHP Multi-Site Setup Guide
 
+[← Back to Documentation](../README.md)
+
 ## Overview
 
 FrankenPHP is a modern PHP application server built on top of the Caddy web server. It combines the power of PHP with Caddy's automatic HTTPS, making it perfect for modern PHP applications.

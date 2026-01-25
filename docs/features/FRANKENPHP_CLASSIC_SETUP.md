@@ -1,3 +1,7 @@
+# FrankenPHP Classic Mode Setup
+
+[← Back to Documentation](../README.md)
+
 Below is a full, copy-paste “article” (markdown) you can feed into Claude Code (or your Go TUI help/docs), plus an interactive Bash script that:
 •	Prompts for site key (unique name) → used in .service filename + description + socket name
 •	Prompts for site root (replaces /var/www/siteA/current everywhere)
