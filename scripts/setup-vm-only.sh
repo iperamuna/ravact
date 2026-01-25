@@ -59,9 +59,9 @@ sudo apt install -y \
 echo -e "${GREEN}✓ Essential tools installed${NC}"
 echo ""
 
-# Install Go 1.21
-echo -e "${BLUE}Installing Go 1.21...${NC}"
-GO_VERSION="1.21.6"
+# Install Go 1.24 (latest stable)
+echo -e "${BLUE}Installing Go 1.24...${NC}"
+GO_VERSION="1.24.0"
 GO_TAR="go${GO_VERSION}.linux-arm64.tar.gz"
 
 # Detect architecture for Go download
@@ -199,7 +199,7 @@ echo -e "${GREEN}========================================${NC}"
 echo ""
 echo -e "${GREEN}What's installed:${NC}"
 echo "  ✓ Ubuntu 24.04 fully updated"
-echo "  ✓ Go 1.21.6 for $(uname -m)"
+echo "  ✓ Go 1.24.0 for $(uname -m)"
 echo "  ✓ Build tools (gcc, make, etc.)"
 echo "  ✓ Development utilities"
 echo "  ✓ Project directories: ~/ravact-go"

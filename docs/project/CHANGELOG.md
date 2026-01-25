@@ -1,5 +1,108 @@
 # Changelog
 
+[← Back to Documentation](../README.md)
+
+## [0.2.2] - 2026-01-26
+
+### Added
+- **Scripts Documentation** - Comprehensive `scripts/README.md` with detailed documentation for all 16 utility scripts
+  - Quick reference table for all scripts
+  - Detailed usage instructions and examples
+  - Script categories (Development, Testing, Release, Deployment)
+  - Tips for fastest development workflow
+
+### Changed
+- **Go Version Updated** - Updated Go version from 1.21.6 to 1.24.0 in VM setup scripts:
+  - `setup-vm-only.sh`
+  - `setup-multipass.sh`
+  - `setup-mac-vm.sh`
+- **Script Headers** - Added consistent headers with usage instructions to:
+  - `test.sh`
+  - `docker-test.sh`
+  - `install.sh`
+  - `release.sh`
+
+### Documentation
+- Added scripts/README.md with complete documentation for all utility scripts
+
+---
+
+## [0.2.1] - 2026-01-25
+
+### Fixed
+- **Form Auto-Focus** - Forms using huh library now automatically focus on first field when navigating to form screens (previously required pressing Enter first)
+- **Email Field Validation** - Email field in Add Nginx Site form now correctly shows "Only required if using Let's Encrypt SSL" instead of always being required
+- **Execution Output Auto-Scroll** - Script execution output now auto-scrolls to bottom while running, so users can see live output
+
+### Changed
+- Moved TODO.md to docs/project/ for better documentation organization
+
+---
+
+## [0.2.0] - 2026-01-25
+
+### Added
+- **Developer Toolkit** - 34+ essential commands for Laravel, WordPress, PHP, and Security maintenance
+  - Laravel: Tail logs, fix permissions, generate APP_KEY, check queue workers, etc.
+  - WordPress: Fix permissions, clear cache, generate salts, find malware patterns
+  - PHP: Check version, list modules, find php.ini, check OPcache
+  - Security: Scan for malware, find world-writable files, check open ports
+- **File Browser** - Full-featured terminal file manager
+  - Directory navigation with vim-style keys
+  - File preview with line numbers
+  - File operations: copy, cut, paste, delete, rename, create
+  - Search and filter with live results
+  - Multi-selection for batch operations
+  - History navigation (back/forward)
+  - Hidden files toggle and sorting options
+  - Help screen (press `?`)
+- **Modern Forms** - Integrated [huh](https://github.com/charmbracelet/huh) library
+  - Beautiful, interactive form components
+  - Custom theme matching Ravact color scheme
+  - Real-time validation with error messages
+  - Password masking for sensitive inputs
+- **Copy to Clipboard** - Press `c` on most screens to copy content
+  - Works in execution output, text displays, config screens
+  - Visual feedback when content is copied
+- **Categorized Menu** - Reorganized main menu structure
+  - Package Management (Install Software, Installed Applications)
+  - Service Configuration (Service Settings)
+  - Site Management (Site Commands, Developer Toolkit)
+  - System Administration (User Management, Quick Commands)
+  - Tools (File Browser)
+- **xterm.js Compatibility** - Works in web-based terminals
+  - Terminal capability detection
+  - ANSI 256 color fallback
+  - ASCII symbol fallback for basic terminals
+- **Standardized UI** - Consistent styling across all screens
+  - Theme-aware symbols (Unicode/ASCII)
+  - Consistent help text format
+  - Uniform spacing and borders
+
+### Changed
+- Updated all form screens to use huh library:
+  - Add User
+  - Add Site
+  - MySQL Password/Port
+  - PostgreSQL Password/Port
+  - Redis Password/Port
+  - Supervisor Add Program
+- Main menu now shows organized categories instead of flat list
+- Help text uses theme symbols for better terminal compatibility
+- Cursor indicators use theme-aware symbols
+
+### Technical
+- Added `github.com/charmbracelet/huh` dependency
+- Added `internal/ui/theme/compat.go` for terminal detection
+- Added custom huh theme in `theme.go`
+- New screen files:
+  - `developer_toolkit.go`
+  - `file_browser.go`
+
+---
+
+## Previous Versions
+
 All notable changes to Ravact will be documented in this file.
 
 ## [0.1.2] - 2026-01-23

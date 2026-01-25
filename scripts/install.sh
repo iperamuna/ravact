@@ -1,6 +1,13 @@
 #!/bin/bash
+#
 # Ravact Installation Script
 # Downloads the correct binary for your system and installs to /usr/local/bin
+#
+# Usage:
+#   curl -sSL https://raw.githubusercontent.com/iperamuna/ravact/main/scripts/install.sh | sudo bash
+#   sudo ./scripts/install.sh
+#   sudo ./scripts/install.sh --local /path/to/binary
+#
 
 set -e
 

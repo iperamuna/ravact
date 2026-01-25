@@ -229,8 +229,8 @@ sudo apt install -y \
     tmux
 
 # Install Go
-echo -e "${BLUE}Installing Go 1.21...${NC}"
-GO_VERSION="1.21.6"
+echo -e "${BLUE}Installing Go 1.24...${NC}"
+GO_VERSION="1.24.0"
 cd /tmp
 wget -q https://go.dev/dl/go${GO_VERSION}.linux-arm64.tar.gz
 sudo rm -rf /usr/local/go

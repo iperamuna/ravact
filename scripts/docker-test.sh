@@ -1,7 +1,10 @@
 #!/bin/bash
 #
-# Docker Test Script for Ravact
+# Ravact Docker Test Script
 # Tests the application in Ubuntu 24.04 container
+#
+# Usage: ./scripts/docker-test.sh
+# Requires: Docker, Dockerfile.test
 #
 
 set -e

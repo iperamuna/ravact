@@ -1,7 +1,9 @@
 #!/bin/bash
 #
-# Test script for Ravact
-# Runs all tests including integration tests
+# Ravact Test Suite
+# Runs unit tests, integration tests, race detection, and generates coverage
+#
+# Usage: ./scripts/test.sh
 #
 
 set -e

@@ -1,6 +1,11 @@
 #!/bin/bash
+#
 # Ravact Release Script
 # Automates version bumping, changelog generation, building, and GitHub release creation
+#
+# Usage: ./scripts/release.sh
+# Requirements: Clean git working directory, Go 1.24+
+#
 
 set -e
 

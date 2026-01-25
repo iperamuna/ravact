@@ -6,6 +6,8 @@
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Linux-orange.svg)](https://www.linux.org/)
 
+![Ravact Main Menu](docs/assets/screenshot.png)
+
 ## ✨ Features
 
 > **Status:** All features are fully implemented and production-ready! 🎉
@@ -46,6 +48,29 @@
 - **Network Info** - Display network interfaces and IP addresses
 - **Top Processes** - Show CPU-sorted process list
 - **Recent Logs** - View recent system journal entries
+
+### 🛠️ Developer Toolkit (NEW)
+- **34+ Essential Commands** - Frequently forgotten terminal commands at your fingertips
+- **Laravel Commands** - Tail logs, fix permissions, generate APP_KEY, check queue workers
+- **WordPress Commands** - Fix permissions, clear cache, generate salts, find malware patterns
+- **PHP Commands** - Check version, list modules, find php.ini, check OPcache
+- **Security Commands** - Scan for malware, find world-writable files, check open ports
+- **Copy to Clipboard** - Press `c` to copy any command instantly
+
+### 📁 File Browser (NEW)
+- **Full-Featured File Manager** - Navigate, preview, and manage files without leaving the app
+- **File Operations** - Copy, cut, paste, delete, rename, create files/directories
+- **File Preview** - View text files with syntax highlighting and line numbers
+- **Search & Filter** - Find files quickly with live filtering
+- **Keyboard-Driven** - Vim-like navigation (h/j/k/l) plus standard arrows
+- **Help Screen** - Press `?` for complete keyboard shortcuts reference
+
+### 🎨 Modern UI/UX (NEW)
+- **Categorized Menus** - Logically organized menu items (Package Management, Service Configuration, Site Management, System Administration, Tools)
+- **Beautiful Forms** - Powered by [huh](https://github.com/charmbracelet/huh) with custom theme
+- **xterm.js Compatible** - Works perfectly in web-based terminals
+- **Copy Support** - Press `c` on most screens to copy content to clipboard
+- **Terminal-Aware** - Auto-detects terminal capabilities and adjusts colors/symbols
 
 ### 🔍 Smart Service Detection
 - Configuration menu automatically detects installed services
@@ -119,59 +144,78 @@ make build-darwin-arm64 # macOS arm64 (Apple Silicon)
    - Press `q` to quit
 
 3. **Install Software**:
-   - Main Menu → Setup
+   - Main Menu → Package Management → Install Software
    - Select package (e.g., Nginx)
    - Choose "Install"
 
 4. **Configure Services**:
-   - Main Menu → Configurations
+   - Main Menu → Service Configuration → Service Settings
    - Select service (e.g., Redis Cache)
    - Manage settings
 
-5. **Manage Nginx Sites**:
-   - Main Menu → Configurations → Nginx Web Server
-   - Press `a` to add a site
-   - Press `Enter` on existing site to manage
+5. **Use Developer Toolkit**:
+   - Main Menu → Site Management → Developer Toolkit
+   - Navigate categories with `Tab` or arrow keys
+   - Press `c` to copy command, `Enter` to execute
+
+6. **Browse Files**:
+   - Main Menu → Tools → File Browser
+   - Press `?` for full keyboard shortcuts help
+
+## ⌨️ Keyboard Shortcuts
+
+### Global
+| Key | Action |
+|-----|--------|
+| `↑`/`↓` or `j`/`k` | Navigate up/down |
+| `Enter` | Select/Confirm |
+| `Esc` | Go back |
+| `q` | Quit |
+| `c` | Copy to clipboard (where supported) |
+
+### File Browser
+| Key | Action |
+|-----|--------|
+| `?` | Show help screen |
+| `Space` | Toggle selection |
+| `y`/`x`/`p` | Copy/Cut/Paste |
+| `n`/`N` | New file/directory |
+| `d` | Delete |
+| `r` | Rename |
+| `/` | Search |
+| `.` | Toggle hidden files |
+
+### Forms (huh)
+| Key | Action |
+|-----|--------|
+| `Tab`/`Shift+Tab` | Navigate fields |
+| `Enter` | Submit/Select |
+| `↑`/`↓` | Change option (in selects) |
 
 ## 📚 Documentation
 
-Comprehensive documentation is available in the [docs](docs/) directory:
+Comprehensive documentation is available in the [docs](docs/) directory.
 
-### Getting Started
-- [Quickstart Guide](docs/getting-started/QUICKSTART.md) - Get up and running in 5 minutes
+👉 **[View Full Documentation](docs/README.md)**
 
-### Features
-- [Database Management](docs/features/DATABASE_MANAGEMENT.md) - MySQL & PostgreSQL configuration
-- [PHP-FPM & Supervisor](docs/features/PHPFPM_SUPERVISOR_GUIDE.md) - Pool and process management
-- [FrankenPHP Guide](docs/features/FRANKENPHP_GUIDE.md) - Modern PHP server setup
-- [User Management](docs/features/TEST_USER_MANAGEMENT.md) - System user administration
+### Quick Links
 
-### Testing
-- [M1 Mac Testing](docs/testing/M1_MAC_MULTIPASS_TESTING.md) - Test on Apple Silicon with Multipass
-- [AMD64/Intel Testing](docs/testing/AMD64_INTEL_TESTING.md) - Test on real hardware
-- [Complete Test Cases](docs/testing/COMPLETE_TEST_CASES.md) - 40+ comprehensive test cases
-
-### Setup & Scripts
-- [Setup Scripts Guide](docs/setup/SETUP_SCRIPTS_GUIDE.md) - Automated setup scripts
-- [Scripts Reference](docs/scripts/SCRIPTS_README.md) - All available scripts
-
-### Development
-- [Development Guide](docs/development/DEVELOPMENT.md) - Contributing and building from source
-- [Release Guide](docs/releasing/RELEASE_GUIDE.md) - Release process
-
-### Troubleshooting
-- [Troubleshooting Guide](docs/troubleshooting/TROUBLESHOOTING.md) - Common issues and solutions
-- [macOS Limitations](docs/troubleshooting/MACOS_LIMITATIONS.md) - Known limitations on macOS
-
-### Project
-- [Project Status](docs/project/PROJECT_STATUS.md) - Current development status
-- [Changelog](docs/project/CHANGELOG.md) - Version history
+| Category | Guides |
+|----------|--------|
+| **Getting Started** | [Quick Start](docs/getting-started/QUICKSTART.md) • [Testing Guide](docs/testing/TESTING_GUIDE.md) |
+| **Features** | [Developer Toolkit](docs/features/DEVELOPER_TOOLKIT.md) • [File Browser](docs/features/FILE_BROWSER.md) • [Database Management](docs/features/DATABASE_MANAGEMENT.md) |
+| **UI** | [UI Guide](docs/ui/UI_GUIDE.md) • [Keyboard Shortcuts](docs/ui/KEYBOARD_SHORTCUTS.md) |
+| **Development** | [Development Guide](docs/development/DEVELOPMENT.md) • [Setup Scripts](docs/setup/SETUP_SCRIPTS_GUIDE.md) |
+| **Help** | [Troubleshooting](docs/troubleshooting/TROUBLESHOOTING.md) • [macOS Limitations](docs/troubleshooting/MACOS_LIMITATIONS.md) |
+| **Project** | [Changelog](docs/project/CHANGELOG.md) • [Project Status](docs/project/PROJECT_STATUS.md) • [TODO/Roadmap](docs/project/TODO.md) |
 
 ## 🛠️ Technology Stack
 
 - **Language**: Go 1.24+
 - **TUI Framework**: [Bubble Tea](https://github.com/charmbracelet/bubbletea)
 - **Styling**: [Lipgloss](https://github.com/charmbracelet/lipgloss)
+- **Forms**: [huh](https://github.com/charmbracelet/huh) - Beautiful, customizable forms
+- **Clipboard**: [clipboard](https://github.com/atotto/clipboard) - Cross-platform clipboard support
 - **Platform**: Linux (Ubuntu, Debian, RHEL, CentOS)
 
 ## 🔒 Security Considerations
@@ -209,7 +253,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## 📊 Project Status
 
-**Version**: 0.1.3
+**Version**: 0.2.2
 
 **All Features Implemented**:
 - ✅ Complete software setup automation (13+ packages)
@@ -223,6 +267,16 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - ✅ User management with sudo access
 - ✅ Editor integration (nano/vi)
 - ✅ Quick system commands
+
+**New in v0.2.0**:
+- ✅ Developer Toolkit with 34+ essential Laravel/WordPress/PHP/Security commands
+- ✅ Full-featured File Browser with preview, search, and file operations
+- ✅ Beautiful forms powered by huh with custom theme
+- ✅ Categorized menu organization following industry standards
+- ✅ Copy to clipboard support across all screens
+- ✅ xterm.js compatibility for web-based terminals
+- ✅ Terminal capability detection with graceful fallbacks
+- ✅ Keyboard shortcuts help screen (press `?` in File Browser)
 
 ---
 
