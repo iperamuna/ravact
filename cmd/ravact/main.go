@@ -11,7 +11,7 @@ import (
 	"github.com/iperamuna/ravact/internal/ui/screens"
 )
 
-var Version = "0.1.3"
+var Version = "0.2.1"
 
 //go:embed assets
 var embeddedAssets embed.FS
@@ -59,6 +59,8 @@ type Model struct {
 	frankenphpClassic screens.FrankenPHPClassicModel
 	quickCommands  screens.QuickCommandsModel
 	execution      screens.ExecutionModel
+	developerToolkit screens.DeveloperToolkitModel
+	fileBrowser      screens.FileBrowserModel
 	configEditorActive string // "add_site" or "site_details"
 	width          int
 	height         int
@@ -162,6 +164,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case screens.AddUserScreen:
 			// Initialize add user screen
 			m.addUser = screens.NewAddUserModel()
+			initCmd = m.addUser.Init()
 		
 		case screens.ConfigMenuScreen:
 			// Initialize config menu screen
@@ -223,6 +226,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if data, ok := msg.Data.(map[string]interface{}); ok {
 					if manager, ok := data["manager"].(*system.MySQLManager); ok {
 						m.mysqlPassword = screens.NewMySQLPasswordModel(manager)
+						initCmd = m.mysqlPassword.Init()
 					}
 				}
 			}
@@ -234,6 +238,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if manager, ok := data["manager"].(*system.MySQLManager); ok {
 						config, _ := data["config"].(*system.MySQLConfig)
 						m.mysqlPort = screens.NewMySQLPortModel(manager, config)
+						initCmd = m.mysqlPort.Init()
 					}
 				}
 			}
@@ -256,6 +261,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if data, ok := msg.Data.(map[string]interface{}); ok {
 					if manager, ok := data["manager"].(*system.PostgreSQLManager); ok {
 						m.postgresqlPassword = screens.NewPostgreSQLPasswordModel(manager)
+						initCmd = m.postgresqlPassword.Init()
 					}
 				}
 			}
@@ -267,6 +273,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if manager, ok := data["manager"].(*system.PostgreSQLManager); ok {
 						config, _ := data["config"].(*system.PostgreSQLConfig)
 						m.postgresqlPort = screens.NewPostgreSQLPortModel(manager, config)
+						initCmd = m.postgresqlPort.Init()
 					}
 				}
 			}
@@ -303,6 +310,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if data, ok := msg.Data.(map[string]interface{}); ok {
 					if manager, ok := data["manager"].(*system.SupervisorManager); ok {
 						m.supervisorAddProgram = screens.NewSupervisorAddProgramModel(manager)
+						initCmd = m.supervisorAddProgram.Init()
 					}
 				}
 			}
@@ -362,6 +370,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case screens.FrankenPHPClassicScreen:
 			// Initialize FrankenPHP Classic Mode screen
 			m.frankenphpClassic = screens.NewFrankenPHPClassicModel()
+
+		case screens.DeveloperToolkitScreen:
+			// Initialize Developer Toolkit screen
+			m.developerToolkit = screens.NewDeveloperToolkitModel()
+
+		case screens.FileBrowserScreen:
+			// Initialize File Browser screen
+			if msg.Data != nil {
+				if data, ok := msg.Data.(map[string]interface{}); ok {
+					if path, ok := data["path"].(string); ok {
+						m.fileBrowser = screens.NewFileBrowserModelWithPath(path)
+					} else {
+						m.fileBrowser = screens.NewFileBrowserModel()
+					}
+				} else {
+					m.fileBrowser = screens.NewFileBrowserModel()
+				}
+			} else {
+				m.fileBrowser = screens.NewFileBrowserModel()
+			}
 		
 		case screens.RedisPasswordScreen:
 			// Initialize Redis password screen
@@ -369,6 +397,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if data, ok := msg.Data.(map[string]interface{}); ok {
 					if config, ok := data["config"].(*system.RedisConfig); ok {
 						m.redisPassword = screens.NewRedisPasswordModel(config)
+						initCmd = m.redisPassword.Init()
 					}
 				}
 			}
@@ -379,6 +408,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if data, ok := msg.Data.(map[string]interface{}); ok {
 					if config, ok := data["config"].(*system.RedisConfig); ok {
 						m.redisPort = screens.NewRedisPortModel(config)
+						initCmd = m.redisPort.Init()
 					}
 				}
 			}
@@ -391,6 +421,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if action == "add_nginx_site" {
 							m.addSite = screens.NewAddSiteModel()
 							m.configEditorActive = "add_site"
+							initCmd = m.addSite.Init()
 						} else if action == "edit_nginx_site" {
 							if site, ok := data["site"].(system.NginxSite); ok {
 								m.siteDetails = screens.NewSiteDetailsModel(site)
@@ -424,6 +455,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		
 		m.execution = screens.NewExecutionModel(msg.Command, msg.Description, returnScreen)
+		initCmd := m.execution.Init()
+		
+		// Send window size
+		if m.width > 0 && m.height > 0 {
+			sizeMsg := tea.WindowSizeMsg{Width: m.width, Height: m.height}
+			return m, tea.Batch(initCmd, func() tea.Msg { return sizeMsg })
+		}
+		return m, initCmd
+
+	case screens.ExecuteToolkitCommandMsg:
+		// Execute a command from the Developer Toolkit
+		m.currentScreen = screens.ExecutionScreen
+		m.execution = screens.NewExecutionModel(msg.Command, msg.Description, screens.DeveloperToolkitScreen)
 		initCmd := m.execution.Init()
 		
 		// Send window size
@@ -631,6 +675,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var model tea.Model
 		model, cmd = m.frankenphpClassic.Update(msg)
 		m.frankenphpClassic = model.(screens.FrankenPHPClassicModel)
+
+	case screens.DeveloperToolkitScreen:
+		var model tea.Model
+		model, cmd = m.developerToolkit.Update(msg)
+		m.developerToolkit = model.(screens.DeveloperToolkitModel)
+
+	case screens.FileBrowserScreen:
+		var model tea.Model
+		model, cmd = m.fileBrowser.Update(msg)
+		m.fileBrowser = model.(screens.FileBrowserModel)
 	
 	case screens.RedisPasswordScreen:
 		var model tea.Model
@@ -732,6 +786,10 @@ func (m Model) View() string {
 		view = m.phpExtensions.View()
 	case screens.FrankenPHPClassicScreen:
 		view = m.frankenphpClassic.View()
+	case screens.DeveloperToolkitScreen:
+		view = m.developerToolkit.View()
+	case screens.FileBrowserScreen:
+		view = m.fileBrowser.View()
 	case screens.RedisPasswordScreen:
 		view = m.redisPassword.View()
 	case screens.RedisPortScreen:

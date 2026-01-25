@@ -356,3 +356,59 @@ func FormatBytes(bytes uint64) string {
 	}
 	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
+
+// GetHostInfo returns hostname with IP in format "hostname (ip)" or just "hostname"
+func GetHostInfo() string {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return ""
+	}
+	
+	ipAddr := GetPrimaryIP()
+	if ipAddr != "" && ipAddr != "N/A" {
+		return fmt.Sprintf("%s (%s)", hostname, ipAddr)
+	}
+	return hostname
+}
+
+// GetPrimaryIP returns the primary IP address of the system
+func GetPrimaryIP() string {
+	// Try to get IP from hostname command first (most reliable for primary IP)
+	cmd := exec.Command("hostname", "-I")
+	output, err := cmd.Output()
+	if err == nil {
+		ips := strings.Fields(strings.TrimSpace(string(output)))
+		if len(ips) > 0 {
+			return ips[0] // Return the first (primary) IP
+		}
+	}
+
+	// Fallback: try ip command on Linux
+	cmd = exec.Command("ip", "-4", "addr", "show", "scope", "global")
+	output, err = cmd.Output()
+	if err == nil {
+		lines := strings.Split(string(output), "\n")
+		for _, line := range lines {
+			if strings.Contains(line, "inet ") {
+				fields := strings.Fields(line)
+				for i, field := range fields {
+					if field == "inet" && i+1 < len(fields) {
+						ip := strings.Split(fields[i+1], "/")[0]
+						return ip
+					}
+				}
+			}
+		}
+	}
+
+	// Fallback for macOS: use ifconfig
+	if runtime.GOOS == "darwin" {
+		cmd = exec.Command("ipconfig", "getifaddr", "en0")
+		output, err = cmd.Output()
+		if err == nil {
+			return strings.TrimSpace(string(output))
+		}
+	}
+
+	return "N/A"
+}
