@@ -216,7 +216,13 @@ func (m InstalledAppsModel) View() string {
 	}
 
 	// Header
-	header := m.theme.Title.Render("Installed Applications")
+	// Header with host info
+	hostInfo := system.GetHostInfo()
+	headerText := "Installed Applications"
+	if hostInfo != "" {
+		headerText = fmt.Sprintf("Installed Applications  %s", m.theme.DescriptionStyle.Render(hostInfo))
+	}
+	header := m.theme.Title.Render(headerText)
 
 	// Summary
 	summary := m.theme.InfoStyle.Render(fmt.Sprintf("Found %d installed applications", len(m.installedApps)))
@@ -232,7 +238,7 @@ func (m InstalledAppsModel) View() string {
 		for i, app := range m.installedApps {
 			cursor := "  "
 			if i == m.cursor {
-				cursor = m.theme.KeyStyle.Render("▶ ")
+				cursor = m.theme.KeyStyle.Render(m.theme.Symbols.Cursor + " ")
 			}
 
 			// Status badge
@@ -272,7 +278,7 @@ func (m InstalledAppsModel) View() string {
 	menu := lipgloss.JoinVertical(lipgloss.Left, appItems...)
 
 	// Help
-	help := m.theme.Help.Render("↑/↓: Navigate • Enter: Manage • r: Refresh • Esc: Back • q: Quit")
+	help := m.theme.Help.Render(m.theme.Symbols.ArrowUp + "/" + m.theme.Symbols.ArrowDown + ": Navigate " + m.theme.Symbols.Bullet + " Enter: Manage " + m.theme.Symbols.Bullet + " r: Refresh " + m.theme.Symbols.Bullet + " Esc: Back " + m.theme.Symbols.Bullet + " q: Quit")
 
 	// Info
 	info := m.theme.DescriptionStyle.Render("Tip: Only shows applications managed by Ravact setup scripts")

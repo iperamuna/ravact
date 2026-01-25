@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/iperamuna/ravact/internal/system"
 	"github.com/iperamuna/ravact/internal/ui/theme"
 )
 
@@ -211,7 +212,13 @@ func (m SiteCommandsModel) View() string {
 	}
 
 	// Header
-	header := m.theme.Title.Render("Site Commands")
+	// Header with host info
+	hostInfo := system.GetHostInfo()
+	headerText := "Site Commands"
+	if hostInfo != "" {
+		headerText = fmt.Sprintf("Site Commands  %s", m.theme.DescriptionStyle.Render(hostInfo))
+	}
+	header := m.theme.Title.Render(headerText)
 
 	// Description
 	desc := m.theme.DescriptionStyle.Render("Commands run from current working directory. Navigate to your project folder before running.")
@@ -221,7 +228,7 @@ func (m SiteCommandsModel) View() string {
 	for i, item := range m.items {
 		cursor := "  "
 		if i == m.cursor {
-			cursor = m.theme.KeyStyle.Render("▶ ")
+			cursor = m.theme.KeyStyle.Render(m.theme.Symbols.Cursor + " ")
 		}
 
 		var renderedItem string
@@ -241,7 +248,7 @@ func (m SiteCommandsModel) View() string {
 	menu := lipgloss.JoinVertical(lipgloss.Left, menuItems...)
 
 	// Help
-	help := m.theme.Help.Render("↑/↓: Navigate • Enter: Select • Esc: Back • q: Quit")
+	help := m.theme.Help.Render(m.theme.Symbols.ArrowUp + "/" + m.theme.Symbols.ArrowDown + ": Navigate " + m.theme.Symbols.Bullet + " Enter: Select " + m.theme.Symbols.Bullet + " Esc: Back " + m.theme.Symbols.Bullet + " q: Quit")
 
 	// Combine all sections
 	content := lipgloss.JoinVertical(

@@ -237,8 +237,13 @@ func (m SetupMenuModel) View() string {
 		return "Loading..."
 	}
 
-	// Header
-	header := m.theme.Title.Render("Setup - Install Software")
+	// Header with host info
+	hostInfo := system.GetHostInfo()
+	headerText := "Setup - Install Software"
+	if hostInfo != "" {
+		headerText = fmt.Sprintf("Setup - Install Software  %s", m.theme.DescriptionStyle.Render(hostInfo))
+	}
+	header := m.theme.Title.Render(headerText)
 
 	// OS compatibility warning
 	var osWarning string
@@ -264,7 +269,7 @@ func (m SetupMenuModel) View() string {
 		for i, script := range m.scripts {
 			cursor := "  "
 			if i == m.cursor {
-				cursor = m.theme.KeyStyle.Render("▶ ")
+				cursor = m.theme.KeyStyle.Render(m.theme.Symbols.Cursor + " ")
 			}
 
 			// Get installation status
@@ -311,7 +316,7 @@ func (m SetupMenuModel) View() string {
 	menu := lipgloss.JoinVertical(lipgloss.Left, menuItems...)
 
 	// Help
-	help := m.theme.Help.Render("↑/↓: Navigate • Enter: Actions • i: Install • r: Refresh • Esc: Back • q: Quit")
+	help := m.theme.Help.Render(m.theme.Symbols.ArrowUp + "/" + m.theme.Symbols.ArrowDown + ": Navigate " + m.theme.Symbols.Bullet + " Enter: Actions " + m.theme.Symbols.Bullet + " i: Install " + m.theme.Symbols.Bullet + " r: Refresh " + m.theme.Symbols.Bullet + " Esc: Back " + m.theme.Symbols.Bullet + " q: Quit")
 
 	// Warning about root
 	warning := m.theme.WarningStyle.Render("Note: Installation requires root privileges")

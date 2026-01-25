@@ -262,8 +262,13 @@ func (m UserManagementModel) View() string {
 		)
 	}
 
-	// Header
-	header := m.theme.Title.Render("User Management")
+	// Header with host info
+	hostInfo := system.GetHostInfo()
+	headerText := "User Management"
+	if hostInfo != "" {
+		headerText = fmt.Sprintf("User Management  %s", m.theme.DescriptionStyle.Render(hostInfo))
+	}
+	header := m.theme.Title.Render(headerText)
 
 	// Tab selection
 	tabUsers := "Users"
@@ -289,9 +294,9 @@ func (m UserManagementModel) View() string {
 	// Help text
 	help := ""
 	if m.viewMode == UsersView {
-		help = m.theme.Help.Render("↑/↓: Navigate • Enter: Details • a: Add User • r: Refresh • Tab: Switch View • Esc: Back • q: Quit")
+		help = m.theme.Help.Render(m.theme.Symbols.ArrowUp + "/" + m.theme.Symbols.ArrowDown + ": Navigate " + m.theme.Symbols.Bullet + " Enter: Details " + m.theme.Symbols.Bullet + " a: Add User " + m.theme.Symbols.Bullet + " r: Refresh " + m.theme.Symbols.Bullet + " Tab: Switch " + m.theme.Symbols.Bullet + " Esc: Back")
 	} else {
-		help = m.theme.Help.Render("↑/↓: Navigate • Enter: Details • a: Add Group • r: Refresh • Tab: Switch View • Esc: Back • q: Quit")
+		help = m.theme.Help.Render(m.theme.Symbols.ArrowUp + "/" + m.theme.Symbols.ArrowDown + ": Navigate " + m.theme.Symbols.Bullet + " Enter: Details " + m.theme.Symbols.Bullet + " a: Add Group " + m.theme.Symbols.Bullet + " r: Refresh " + m.theme.Symbols.Bullet + " Tab: Switch " + m.theme.Symbols.Bullet + " Esc: Back")
 	}
 
 	// Combine all sections
@@ -374,7 +379,7 @@ func (m UserManagementModel) renderUsersView() string {
 		i := idx
 		cursor := "  "
 		if i == m.cursor {
-			cursor = m.theme.KeyStyle.Render("▶ ")
+			cursor = m.theme.KeyStyle.Render(m.theme.Symbols.Cursor + " ")
 		}
 
 		// Username
@@ -501,7 +506,7 @@ func (m UserManagementModel) renderGroupsView() string {
 		i := idx
 		cursor := "  "
 		if i == m.cursor {
-			cursor = m.theme.KeyStyle.Render("▶ ")
+			cursor = m.theme.KeyStyle.Render(m.theme.Symbols.Cursor + " ")
 		}
 
 		// Group name

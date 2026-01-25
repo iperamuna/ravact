@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/charmbracelet/huh"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/iperamuna/ravact/internal/system"
@@ -17,26 +18,57 @@ type RedisPortModel struct {
 	height       int
 	redisManager *system.RedisManager
 	config       *system.RedisConfig
+	form         *huh.Form
 	port         string
-	currentField int // 0 = port, 1 = submit
 	err          error
 	success      bool
 }
 
 // NewRedisPortModel creates a new Redis port model
 func NewRedisPortModel(config *system.RedisConfig) RedisPortModel {
-	return RedisPortModel{
-		theme:        theme.DefaultTheme(),
+	t := theme.DefaultTheme()
+
+	m := RedisPortModel{
+		theme:        t,
 		redisManager: system.NewRedisManager(),
 		config:       config,
 		port:         config.Port,
-		currentField: 0,
 	}
+
+	m.form = m.buildForm()
+	return m
+}
+
+func (m *RedisPortModel) buildForm() *huh.Form {
+	return huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("New Port").
+				Description("Port must be between 1-65535. Default is 6379.").
+				Placeholder("6379").
+				Validate(func(s string) error {
+					if s == "" {
+						return fmt.Errorf("port cannot be empty")
+					}
+					portNum, err := strconv.Atoi(s)
+					if err != nil {
+						return fmt.Errorf("invalid port number")
+					}
+					if portNum < 1 || portNum > 65535 {
+						return fmt.Errorf("port must be between 1-65535")
+					}
+					return nil
+				}).
+				Value(&m.port),
+		),
+	).WithTheme(m.theme.HuhTheme).
+		WithShowHelp(true).
+		WithShowErrors(true)
 }
 
 // Init initializes the screen
 func (m RedisPortModel) Init() tea.Cmd {
-	return nil
+	return m.form.Init()
 }
 
 // Update handles messages
@@ -55,64 +87,42 @@ func (m RedisPortModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return NavigateMsg{Screen: RedisConfigScreen}
 				}
 			}
+			return m, nil
 		}
 
 		switch msg.String() {
-		case "ctrl+c", "q":
+		case "ctrl+c":
 			return m, tea.Quit
-
 		case "esc":
-			return m, func() tea.Msg {
-				return NavigateMsg{Screen: RedisConfigScreen}
-			}
-
-		case "tab", "down":
-			m.currentField = (m.currentField + 1) % 2
-
-		case "shift+tab", "up":
-			m.currentField = (m.currentField - 1 + 2) % 2
-
-		case "enter":
-			if m.currentField == 1 {
-				return m.changePort()
-			}
-
-		case "backspace":
-			if m.currentField == 0 && len(m.port) > 0 {
-				m.port = m.port[:len(m.port)-1]
-			}
-
-		default:
-			if len(msg.String()) == 1 && m.currentField == 0 {
-				// Only allow digits
-				if msg.String() >= "0" && msg.String() <= "9" {
-					m.port += msg.String()
+			if m.form.State == huh.StateNormal {
+				return m, func() tea.Msg {
+					return NavigateMsg{Screen: RedisConfigScreen}
 				}
 			}
 		}
 	}
 
-	return m, nil
+	// Update the form
+	form, cmd := m.form.Update(msg)
+	if f, ok := form.(*huh.Form); ok {
+		m.form = f
+	}
+
+	// Check if form is completed
+	if m.form.State == huh.StateCompleted {
+		return m.changePort()
+	}
+
+	return m, cmd
 }
 
 // changePort changes the Redis port
 func (m RedisPortModel) changePort() (RedisPortModel, tea.Cmd) {
-	// Validate
-	if m.port == "" {
-		m.err = fmt.Errorf("port cannot be empty")
-		return m, nil
-	}
-	
-	portNum, err := strconv.Atoi(m.port)
-	if err != nil || portNum < 1 || portNum > 65535 {
-		m.err = fmt.Errorf("port must be between 1 and 65535")
-		return m, nil
-	}
-
 	// Set port
-	err = m.redisManager.SetPort(m.port)
+	err := m.redisManager.SetPort(m.port)
 	if err != nil {
 		m.err = err
+		m.form = m.buildForm()
 		return m, nil
 	}
 
@@ -134,55 +144,35 @@ func (m RedisPortModel) View() string {
 		return "Loading..."
 	}
 
-	// If success or error, show message
+	// If success, show message
 	if m.success {
-		msg := m.theme.SuccessStyle.Render("✓ Redis port changed successfully!")
+		msg := m.theme.SuccessStyle.Render(m.theme.Symbols.CheckMark + " Redis port changed successfully!")
 		help := m.theme.Help.Render("Press any key to continue...")
 		content := lipgloss.JoinVertical(lipgloss.Center, "", msg, "", help)
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
+		bordered := m.theme.BorderStyle.Render(content)
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
 	}
 
+	// If error, show message
 	if m.err != nil {
-		msg := m.theme.ErrorStyle.Render(fmt.Sprintf("✗ Error: %v", m.err))
+		msg := m.theme.ErrorStyle.Render(m.theme.Symbols.CrossMark + " Error: " + m.err.Error())
 		help := m.theme.Help.Render("Press any key to continue...")
 		content := lipgloss.JoinVertical(lipgloss.Center, "", msg, "", help)
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
+		bordered := m.theme.BorderStyle.Render(content)
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
 	}
 
 	// Header
 	header := m.theme.Title.Render("Change Redis Port")
 
 	// Current port info
-	currentInfo := m.theme.DescriptionStyle.Render(fmt.Sprintf("Current port: %s", m.config.Port))
-
-	// Form fields
-	var formFields []string
-
-	// Port field
-	portStyle := m.theme.MenuItem
-	if m.currentField == 0 {
-		portStyle = m.theme.SelectedItem
-	}
-	formFields = append(formFields, portStyle.Render(fmt.Sprintf("New Port: %s_", m.port)))
-
-	// Submit button
-	submitStyle := m.theme.MenuItem
-	if m.currentField == 1 {
-		submitStyle = m.theme.SelectedItem
-	}
-	formFields = append(formFields, "")
-	formFields = append(formFields, submitStyle.Render("[ Change Port ]"))
-
-	form := lipgloss.JoinVertical(lipgloss.Left, formFields...)
-
-	// Help
-	help := m.theme.Help.Render("Tab/↑↓: Navigate • Enter: Submit • Esc: Cancel • q: Quit")
-
-	// Instructions
-	instructions := m.theme.DescriptionStyle.Render("Port must be between 1 and 65535. Default is 6379.")
+	currentInfo := m.theme.Label.Render(fmt.Sprintf("Current port: %s", m.config.Port))
 
 	// Warning
-	warning := m.theme.WarningStyle.Render("⚠ Changing port will require updating client connections")
+	warning := m.theme.WarningStyle.Render(m.theme.Symbols.Warning + " Changing port will require updating client connections")
+
+	// Help
+	help := m.theme.Help.Render("Enter: Submit " + m.theme.Symbols.Bullet + " Esc: Cancel")
 
 	// Combine all sections
 	content := lipgloss.JoinVertical(
@@ -191,10 +181,9 @@ func (m RedisPortModel) View() string {
 		"",
 		currentInfo,
 		"",
-		instructions,
-		warning,
+		m.form.View(),
 		"",
-		form,
+		warning,
 		"",
 		help,
 	)

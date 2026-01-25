@@ -5,21 +5,11 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/charmbracelet/huh"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/iperamuna/ravact/internal/system"
 	"github.com/iperamuna/ravact/internal/ui/theme"
-)
-
-// AddUserField represents a field in the add user form
-type AddUserField int
-
-const (
-	UsernameField AddUserField = iota
-	PasswordField
-	ShellField
-	GrantSudoField
-	ConfirmField
 )
 
 // AddUserModel represents the add user screen
@@ -28,41 +18,100 @@ type AddUserModel struct {
 	width       int
 	height      int
 	userManager *system.UserManager
-	
+
+	// Form
+	form *huh.Form
+
 	// Form fields
-	username    string
-	password    string
-	shell       string
-	grantSudo   bool
-	
+	username  string
+	password  string
+	shell     string
+	grantSudo bool
+
 	// UI state
-	cursor      AddUserField
-	err         error
-	message     string
-	
-	// Available shells
-	shells      []string
-	shellCursor int
+	err       error
+	message   string
+	submitted bool
 }
 
 // NewAddUserModel creates a new add user model
 func NewAddUserModel() AddUserModel {
-	return AddUserModel{
-		theme:       theme.DefaultTheme(),
+	t := theme.DefaultTheme()
+
+	m := AddUserModel{
+		theme:       t,
 		userManager: system.NewUserManager(),
 		username:    "",
 		password:    "",
 		shell:       "/bin/bash",
 		grantSudo:   false,
-		cursor:      UsernameField,
-		shells:      []string{"/bin/bash", "/bin/sh", "/bin/zsh", "/bin/fish"},
-		shellCursor: 0,
 	}
+
+	// Create the huh form
+	m.form = huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Username").
+				Description("Must be 3+ chars, start with letter, lowercase/numbers/_/-").
+				Placeholder("Enter username...").
+				Validate(func(s string) error {
+					if s == "" {
+						return fmt.Errorf("username cannot be empty")
+					}
+					if len(s) < 3 {
+						return fmt.Errorf("username must be at least 3 characters")
+					}
+					if matched, _ := regexp.MatchString(`^[a-z][a-z0-9_-]*$`, s); !matched {
+						return fmt.Errorf("must start with letter, use lowercase/numbers/_/-")
+					}
+					return nil
+				}).
+				Value(&m.username),
+
+			huh.NewInput().
+				Title("Password").
+				Description("Must be at least 6 characters").
+				Placeholder("Enter password...").
+				EchoMode(huh.EchoModePassword).
+				Validate(func(s string) error {
+					if s == "" {
+						return fmt.Errorf("password cannot be empty")
+					}
+					if len(s) < 6 {
+						return fmt.Errorf("password must be at least 6 characters")
+					}
+					return nil
+				}).
+				Value(&m.password),
+
+			huh.NewSelect[string]().
+				Title("Shell").
+				Description("Default shell for the user").
+				Options(
+					huh.NewOption("/bin/bash", "/bin/bash"),
+					huh.NewOption("/bin/sh", "/bin/sh"),
+					huh.NewOption("/bin/zsh", "/bin/zsh"),
+					huh.NewOption("/bin/fish", "/bin/fish"),
+				).
+				Value(&m.shell),
+
+			huh.NewConfirm().
+				Title("Grant Sudo Privileges").
+				Description("Allow user to run commands as root").
+				Affirmative("Yes").
+				Negative("No").
+				Value(&m.grantSudo),
+		),
+	).WithTheme(t.HuhTheme).
+		WithShowHelp(true).
+		WithShowErrors(true)
+
+	return m
 }
 
 // Init initializes the add user screen
 func (m AddUserModel) Init() tea.Cmd {
-	return nil
+	return m.form.Init()
 }
 
 // Update handles messages for add user
@@ -79,7 +128,7 @@ func (m AddUserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "ctrl+c", "q":
 				return m, tea.Quit
-			case "esc", "backspace":
+			case "esc", "backspace", "enter", " ":
 				// Check if it's success message
 				if strings.Contains(m.message, "✓") {
 					return m, func() tea.Msg {
@@ -109,104 +158,103 @@ func (m AddUserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		// Global keys
 		switch msg.String() {
-		case "ctrl+c", "q":
+		case "ctrl+c":
 			return m, tea.Quit
-
 		case "esc":
-			return m, func() tea.Msg {
-				return NavigateMsg{Screen: UserManagementScreen}
-			}
-
-		case "up", "k":
-			if m.cursor > 0 {
-				m.cursor--
-			}
-
-		case "down", "j", "tab":
-			if m.cursor < ConfirmField {
-				m.cursor++
-			}
-
-		case "enter", " ":
-			switch m.cursor {
-			case ShellField:
-				// Cycle through shells
-				m.shellCursor = (m.shellCursor + 1) % len(m.shells)
-				m.shell = m.shells[m.shellCursor]
-
-			case GrantSudoField:
-				// Toggle sudo
-				m.grantSudo = !m.grantSudo
-
-			case ConfirmField:
-				// Validate and create user
-				if err := m.validateAndCreateUser(); err != nil {
-					m.err = err
-				} else {
-					m.message = fmt.Sprintf("✓ User '%s' created successfully!\n\nPress any key to return to User Management", m.username)
-				}
-			}
-
-		case "backspace":
-			// Handle backspace for text fields
-			switch m.cursor {
-			case UsernameField:
-				if len(m.username) > 0 {
-					m.username = m.username[:len(m.username)-1]
-				}
-			case PasswordField:
-				if len(m.password) > 0 {
-					m.password = m.password[:len(m.password)-1]
-				}
-			}
-
-		default:
-			// Handle text input
-			if len(msg.String()) == 1 {
-				char := msg.String()
-				switch m.cursor {
-				case UsernameField:
-					// Allow lowercase letters, numbers, underscore, hyphen
-					if matched, _ := regexp.MatchString(`^[a-z0-9_-]$`, char); matched {
-						if len(m.username) < 32 {
-							m.username += char
-						}
-					}
-				case PasswordField:
-					// Allow any printable character
-					if len(m.password) < 64 {
-						m.password += char
-					}
+			if m.form.State == huh.StateNormal {
+				return m, func() tea.Msg {
+					return NavigateMsg{Screen: UserManagementScreen}
 				}
 			}
 		}
 	}
 
-	return m, nil
+	// Update the form
+	form, cmd := m.form.Update(msg)
+	if f, ok := form.(*huh.Form); ok {
+		m.form = f
+	}
+
+	// Check if form is completed
+	if m.form.State == huh.StateCompleted {
+		if err := m.createUser(); err != nil {
+			m.err = err
+			// Reset form state to allow retry
+			m.form = m.rebuildForm()
+		} else {
+			m.message = fmt.Sprintf("✓ User '%s' created successfully!\n\nPress any key to return to User Management", m.username)
+		}
+		return m, nil
+	}
+
+	return m, cmd
 }
 
-// validateAndCreateUser validates input and creates the user
-func (m *AddUserModel) validateAndCreateUser() error {
-	// Validate username
-	if m.username == "" {
-		return fmt.Errorf("username cannot be empty")
-	}
-	if len(m.username) < 3 {
-		return fmt.Errorf("username must be at least 3 characters")
-	}
-	if matched, _ := regexp.MatchString(`^[a-z][a-z0-9_-]*$`, m.username); !matched {
-		return fmt.Errorf("username must start with lowercase letter and contain only lowercase, numbers, _, -")
-	}
+// rebuildForm creates a fresh form instance
+func (m *AddUserModel) rebuildForm() *huh.Form {
+	return huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Username").
+				Description("Must be 3+ chars, start with letter, lowercase/numbers/_/-").
+				Placeholder("Enter username...").
+				Validate(func(s string) error {
+					if s == "" {
+						return fmt.Errorf("username cannot be empty")
+					}
+					if len(s) < 3 {
+						return fmt.Errorf("username must be at least 3 characters")
+					}
+					if matched, _ := regexp.MatchString(`^[a-z][a-z0-9_-]*$`, s); !matched {
+						return fmt.Errorf("must start with letter, use lowercase/numbers/_/-")
+					}
+					return nil
+				}).
+				Value(&m.username),
 
-	// Validate password
-	if m.password == "" {
-		return fmt.Errorf("password cannot be empty")
-	}
-	if len(m.password) < 6 {
-		return fmt.Errorf("password must be at least 6 characters")
-	}
+			huh.NewInput().
+				Title("Password").
+				Description("Must be at least 6 characters").
+				Placeholder("Enter password...").
+				EchoMode(huh.EchoModePassword).
+				Validate(func(s string) error {
+					if s == "" {
+						return fmt.Errorf("password cannot be empty")
+					}
+					if len(s) < 6 {
+						return fmt.Errorf("password must be at least 6 characters")
+					}
+					return nil
+				}).
+				Value(&m.password),
 
+			huh.NewSelect[string]().
+				Title("Shell").
+				Description("Default shell for the user").
+				Options(
+					huh.NewOption("/bin/bash", "/bin/bash"),
+					huh.NewOption("/bin/sh", "/bin/sh"),
+					huh.NewOption("/bin/zsh", "/bin/zsh"),
+					huh.NewOption("/bin/fish", "/bin/fish"),
+				).
+				Value(&m.shell),
+
+			huh.NewConfirm().
+				Title("Grant Sudo Privileges").
+				Description("Allow user to run commands as root").
+				Affirmative("Yes").
+				Negative("No").
+				Value(&m.grantSudo),
+		),
+	).WithTheme(m.theme.HuhTheme).
+		WithShowHelp(true).
+		WithShowErrors(true)
+}
+
+// createUser creates the user with the form values
+func (m *AddUserModel) createUser() error {
 	// Create user
 	err := m.userManager.CreateUser(m.username, m.password, m.shell)
 	if err != nil {
@@ -269,107 +317,24 @@ func (m AddUserModel) View() string {
 
 	// Header
 	header := m.theme.Title.Render("Add New User")
-	
-	// Instructions
-	instructions := m.theme.DescriptionStyle.Render("Fill in the details to create a new user account")
-
-	// Form fields
-	var formItems []string
-
-	// Username field
-	usernameLabel := "Username:"
-	usernameValue := m.username
-	if usernameValue == "" {
-		usernameValue = "(type username...)"
-	}
-	if m.cursor == UsernameField {
-		usernameLabel = m.theme.KeyStyle.Render("▶ " + usernameLabel)
-		usernameValue = m.theme.SelectedItem.Render(usernameValue + "_")
-	} else {
-		usernameLabel = "  " + usernameLabel
-		usernameValue = m.theme.MenuItem.Render(usernameValue)
-	}
-	formItems = append(formItems, usernameLabel+" "+usernameValue)
-	formItems = append(formItems, m.theme.Help.Render("  Must be 3+ chars, start with letter, use lowercase/numbers/_/-"))
-	formItems = append(formItems, "")
-
-	// Password field
-	passwordLabel := "Password:"
-	passwordValue := strings.Repeat("*", len(m.password))
-	if passwordValue == "" {
-		passwordValue = "(type password...)"
-	}
-	if m.cursor == PasswordField {
-		passwordLabel = m.theme.KeyStyle.Render("▶ " + passwordLabel)
-		passwordValue = m.theme.SelectedItem.Render(passwordValue + "_")
-	} else {
-		passwordLabel = "  " + passwordLabel
-		passwordValue = m.theme.MenuItem.Render(passwordValue)
-	}
-	formItems = append(formItems, passwordLabel+" "+passwordValue)
-	formItems = append(formItems, m.theme.Help.Render("  Must be 6+ characters"))
-	formItems = append(formItems, "")
-
-	// Shell field
-	shellLabel := "Shell:"
-	shellValue := m.shell
-	if m.cursor == ShellField {
-		shellLabel = m.theme.KeyStyle.Render("▶ " + shellLabel)
-		shellValue = m.theme.SelectedItem.Render(shellValue + " (press Enter to change)")
-	} else {
-		shellLabel = "  " + shellLabel
-		shellValue = m.theme.MenuItem.Render(shellValue)
-	}
-	formItems = append(formItems, shellLabel+" "+shellValue)
-	formItems = append(formItems, "")
-
-	// Sudo field
-	sudoLabel := "Grant Sudo:"
-	sudoValue := "No"
-	if m.grantSudo {
-		sudoValue = m.theme.SuccessStyle.Render("✓ Yes")
-	} else {
-		sudoValue = m.theme.MenuItem.Render("✗ No")
-	}
-	if m.cursor == GrantSudoField {
-		sudoLabel = m.theme.KeyStyle.Render("▶ " + sudoLabel)
-		sudoValue = m.theme.SelectedItem.Render(sudoValue + " (press Enter to toggle)")
-	} else {
-		sudoLabel = "  " + sudoLabel
-	}
-	formItems = append(formItems, sudoLabel+" "+sudoValue)
-	formItems = append(formItems, "")
-
-	// Confirm button
-	confirmButton := "[ Create User ]"
-	if m.cursor == ConfirmField {
-		confirmButton = m.theme.SelectedItem.Render("▶ " + confirmButton)
-	} else {
-		confirmButton = m.theme.MenuItem.Render("  " + confirmButton)
-	}
-	formItems = append(formItems, "")
-	formItems = append(formItems, confirmButton)
-
-	form := lipgloss.JoinVertical(lipgloss.Left, formItems...)
-
-	// Help
-	help := m.theme.Help.Render("↑/↓/Tab: Navigate • Type: Enter text • Enter: Select/Toggle • Esc: Cancel • q: Quit")
 
 	// Warning
-	warning := m.theme.WarningStyle.Render("⚠ Requires root privileges to create users")
+	warning := m.theme.WarningStyle.Render(m.theme.Symbols.Warning + " Requires root privileges to create users")
+
+	// Render the huh form
+	formView := m.form.View()
+
+	// Help
+	help := m.theme.Help.Render("Tab/Shift+Tab: Navigate " + m.theme.Symbols.Bullet + " Enter: Select/Submit " + m.theme.Symbols.Bullet + " Esc: Cancel")
 
 	// Combine all sections
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,
 		header,
 		"",
-		instructions,
-		"",
-		"",
-		form,
-		"",
-		"",
 		warning,
+		"",
+		formView,
 		"",
 		help,
 	)

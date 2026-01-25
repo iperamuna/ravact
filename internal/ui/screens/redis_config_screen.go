@@ -2,7 +2,9 @@ package screens
 
 import (
 	"fmt"
+	"time"
 
+	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/iperamuna/ravact/internal/system"
@@ -33,6 +35,8 @@ type RedisConfigModel struct {
 	status       string
 	err          error
 	success      string
+	copied       bool
+	copiedTimer  int
 }
 
 // NewRedisConfigModel creates a new Redis config model
@@ -95,6 +99,35 @@ func (m RedisConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "enter", " ":
 			return m.executeAction()
+
+		case "c":
+			// Copy configuration to clipboard
+			if m.config != nil {
+				passStatus := "Not Set"
+				if m.config.RequirePass != "" {
+					passStatus = "Set"
+				}
+				content := fmt.Sprintf("Redis Configuration\nPort: %s\nPassword: %s\nStatus: %s\nConfig Path: %s",
+					m.config.Port, passStatus, m.status, m.config.ConfigPath)
+				clipboard.WriteAll(content)
+				m.copied = true
+				m.copiedTimer = 3
+				return m, tea.Tick(time.Second, func(t time.Time) tea.Msg {
+					return CopyTimerTickMsg{}
+				})
+			}
+		}
+
+	case CopyTimerTickMsg:
+		if m.copiedTimer > 0 {
+			m.copiedTimer--
+			if m.copiedTimer == 0 {
+				m.copied = false
+			} else {
+				return m, tea.Tick(time.Second, func(t time.Time) tea.Msg {
+					return CopyTimerTickMsg{}
+				})
+			}
 		}
 	}
 
@@ -181,16 +214,16 @@ func (m RedisConfigModel) View() string {
 	if m.config != nil {
 		configInfo = append(configInfo, m.theme.Label.Render("Current Configuration:"))
 		configInfo = append(configInfo, m.theme.MenuItem.Render(fmt.Sprintf("  Port: %s", m.config.Port)))
-		
+
 		if m.config.RequirePass != "" {
 			configInfo = append(configInfo, m.theme.MenuItem.Render(fmt.Sprintf("  Password: %s", "********")))
 		} else {
 			configInfo = append(configInfo, m.theme.WarningStyle.Render("  Password: Not Set (Insecure!)"))
 		}
-		
+
 		configInfo = append(configInfo, m.theme.DescriptionStyle.Render(fmt.Sprintf("  Config: %s", m.config.ConfigPath)))
 	}
-	
+
 	// Status
 	statusStyle := m.theme.DescriptionStyle
 	statusText := m.status
@@ -202,7 +235,7 @@ func (m RedisConfigModel) View() string {
 		statusText = "Stopped"
 	}
 	configInfo = append(configInfo, m.theme.Label.Render("Status: ")+statusStyle.Render(statusText))
-	
+
 	configInfoSection := lipgloss.JoinVertical(lipgloss.Left, configInfo...)
 
 	// Actions menu
@@ -210,7 +243,7 @@ func (m RedisConfigModel) View() string {
 	for i, action := range m.actions {
 		cursor := "  "
 		if i == m.cursor {
-			cursor = m.theme.KeyStyle.Render("▶ ")
+			cursor = m.theme.KeyStyle.Render(m.theme.Symbols.Cursor + " ")
 		}
 
 		var renderedItem string
@@ -233,13 +266,16 @@ func (m RedisConfigModel) View() string {
 	if m.err != nil {
 		messages = append(messages, m.theme.ErrorStyle.Render(fmt.Sprintf("Error: %v", m.err)))
 	}
+	if m.copied {
+		messages = append(messages, m.theme.CopiedStyle.Render(m.theme.Symbols.Copy+" Copied to clipboard!"))
+	}
 	messageSection := ""
 	if len(messages) > 0 {
 		messageSection = lipgloss.JoinVertical(lipgloss.Left, messages...)
 	}
 
 	// Help
-	help := m.theme.Help.Render("↑/↓: Navigate • Enter: Execute • Esc: Back • q: Quit")
+	help := m.theme.Help.Render(m.theme.Symbols.ArrowUp + "/" + m.theme.Symbols.ArrowDown + ": Navigate " + m.theme.Symbols.Bullet + " Enter: Execute " + m.theme.Symbols.Bullet + " c: Copy " + m.theme.Symbols.Bullet + " Esc: Back " + m.theme.Symbols.Bullet + " q: Quit")
 
 	// Combine all sections
 	sections := []string{

@@ -177,7 +177,13 @@ func (m NginxConfigModel) View() string {
 	}
 
 	// Header
-	header := m.theme.Title.Render("Nginx Configuration")
+	// Header with host info
+	hostInfo := system.GetHostInfo()
+	headerText := "Nginx Configuration"
+	if hostInfo != "" {
+		headerText = fmt.Sprintf("Nginx Configuration  %s", m.theme.DescriptionStyle.Render(hostInfo))
+	}
+	header := m.theme.Title.Render(headerText)
 
 	// Tab selection
 	tabSites := "Sites"
@@ -209,9 +215,9 @@ func (m NginxConfigModel) View() string {
 	// Help text
 	help := ""
 	if m.viewMode == SitesListView {
-		help = m.theme.Help.Render("↑/↓: Navigate • Enter: Edit • a: Add Site • e: Enable/Disable • t: Test Config • r: Refresh • Tab: Switch • Esc: Back")
+		help = m.theme.Help.Render(m.theme.Symbols.ArrowUp + "/" + m.theme.Symbols.ArrowDown + ": Navigate " + m.theme.Symbols.Bullet + " Enter: Edit " + m.theme.Symbols.Bullet + " a: Add " + m.theme.Symbols.Bullet + " e: Enable/Disable " + m.theme.Symbols.Bullet + " t: Test " + m.theme.Symbols.Bullet + " r: Refresh " + m.theme.Symbols.Bullet + " Esc: Back")
 	} else {
-		help = m.theme.Help.Render("Tab: Switch to Sites • Esc: Back • q: Quit")
+		help = m.theme.Help.Render("Tab: Switch to Sites " + m.theme.Symbols.Bullet + " Esc: Back " + m.theme.Symbols.Bullet + " q: Quit")
 	}
 
 	// Combine all sections
@@ -307,7 +313,7 @@ func (m NginxConfigModel) renderSitesView() string {
 		i := idx
 		cursor := "  "
 		if i == m.cursor {
-			cursor = m.theme.KeyStyle.Render("▶ ")
+			cursor = m.theme.KeyStyle.Render(m.theme.Symbols.Cursor + " ")
 		}
 
 		// Site name

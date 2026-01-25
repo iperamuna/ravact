@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/iperamuna/ravact/internal/system"
 	"github.com/iperamuna/ravact/internal/ui/theme"
 )
 
@@ -180,8 +181,13 @@ func (m ConfigMenuModel) View() string {
 		return "Loading..."
 	}
 
-	// Header
-	header := m.theme.Title.Render("Configurations")
+	// Header with host info
+	hostInfo := system.GetHostInfo()
+	headerText := "Service Settings"
+	if hostInfo != "" {
+		headerText = fmt.Sprintf("Service Settings  %s", m.theme.DescriptionStyle.Render(hostInfo))
+	}
+	header := m.theme.Title.Render(headerText)
 
 	// Description
 	desc := m.theme.DescriptionStyle.Render("Manage service configurations for installed applications")
@@ -191,7 +197,7 @@ func (m ConfigMenuModel) View() string {
 	for i, item := range m.items {
 		cursor := "  "
 		if i == m.cursor {
-			cursor = m.theme.KeyStyle.Render("▶ ")
+			cursor = m.theme.KeyStyle.Render(m.theme.Symbols.Cursor + " ")
 		}
 
 		// Build item display
@@ -226,7 +232,7 @@ func (m ConfigMenuModel) View() string {
 	menu := lipgloss.JoinVertical(lipgloss.Left, menuItems...)
 
 	// Help
-	help := m.theme.Help.Render("↑/↓: Navigate • Enter: Select • Esc: Back • q: Quit")
+	help := m.theme.Help.Render(m.theme.Symbols.ArrowUp + "/" + m.theme.Symbols.ArrowDown + ": Navigate " + m.theme.Symbols.Bullet + " Enter: Select " + m.theme.Symbols.Bullet + " Esc: Back " + m.theme.Symbols.Bullet + " q: Quit")
 
 	// Combine all sections
 	content := lipgloss.JoinVertical(

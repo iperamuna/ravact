@@ -3,6 +3,7 @@ package screens
 import (
 	"fmt"
 
+	"github.com/charmbracelet/huh"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/iperamuna/ravact/internal/system"
@@ -16,26 +17,69 @@ type RedisPasswordModel struct {
 	height       int
 	redisManager *system.RedisManager
 	config       *system.RedisConfig
+	form         *huh.Form
 	password     string
 	confirm      string
-	currentField int // 0 = password, 1 = confirm, 2 = submit
 	err          error
 	success      bool
 }
 
 // NewRedisPasswordModel creates a new Redis password model
 func NewRedisPasswordModel(config *system.RedisConfig) RedisPasswordModel {
-	return RedisPasswordModel{
-		theme:        theme.DefaultTheme(),
+	t := theme.DefaultTheme()
+
+	m := RedisPasswordModel{
+		theme:        t,
 		redisManager: system.NewRedisManager(),
 		config:       config,
-		currentField: 0,
+		password:     "",
+		confirm:      "",
 	}
+
+	m.form = m.buildForm()
+	return m
+}
+
+func (m *RedisPasswordModel) buildForm() *huh.Form {
+	return huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("New Password").
+				Description("Password must be at least 8 characters").
+				Placeholder("Enter new password...").
+				EchoMode(huh.EchoModePassword).
+				Validate(func(s string) error {
+					if s == "" {
+						return fmt.Errorf("password cannot be empty")
+					}
+					if len(s) < 8 {
+						return fmt.Errorf("password must be at least 8 characters")
+					}
+					return nil
+				}).
+				Value(&m.password),
+
+			huh.NewInput().
+				Title("Confirm Password").
+				Description("Re-enter the password to confirm").
+				Placeholder("Confirm password...").
+				EchoMode(huh.EchoModePassword).
+				Validate(func(s string) error {
+					if s == "" {
+						return fmt.Errorf("please confirm password")
+					}
+					return nil
+				}).
+				Value(&m.confirm),
+		),
+	).WithTheme(m.theme.HuhTheme).
+		WithShowHelp(true).
+		WithShowErrors(true)
 }
 
 // Init initializes the screen
 func (m RedisPasswordModel) Init() tea.Cmd {
-	return nil
+	return m.form.Init()
 }
 
 // Update handles messages
@@ -54,62 +98,41 @@ func (m RedisPasswordModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return NavigateMsg{Screen: RedisConfigScreen}
 				}
 			}
+			return m, nil
 		}
 
 		switch msg.String() {
-		case "ctrl+c", "q":
+		case "ctrl+c":
 			return m, tea.Quit
-
 		case "esc":
-			return m, func() tea.Msg {
-				return NavigateMsg{Screen: RedisConfigScreen}
-			}
-
-		case "tab", "down":
-			m.currentField = (m.currentField + 1) % 3
-
-		case "shift+tab", "up":
-			m.currentField = (m.currentField - 1 + 3) % 3
-
-		case "enter":
-			if m.currentField == 2 {
-				return m.changePassword()
-			}
-
-		case "backspace":
-			if m.currentField == 0 && len(m.password) > 0 {
-				m.password = m.password[:len(m.password)-1]
-			} else if m.currentField == 1 && len(m.confirm) > 0 {
-				m.confirm = m.confirm[:len(m.confirm)-1]
-			}
-
-		default:
-			if len(msg.String()) == 1 {
-				if m.currentField == 0 {
-					m.password += msg.String()
-				} else if m.currentField == 1 {
-					m.confirm += msg.String()
+			if m.form.State == huh.StateNormal {
+				return m, func() tea.Msg {
+					return NavigateMsg{Screen: RedisConfigScreen}
 				}
 			}
 		}
 	}
 
-	return m, nil
+	// Update the form
+	form, cmd := m.form.Update(msg)
+	if f, ok := form.(*huh.Form); ok {
+		m.form = f
+	}
+
+	// Check if form is completed
+	if m.form.State == huh.StateCompleted {
+		return m.changePassword()
+	}
+
+	return m, cmd
 }
 
 // changePassword changes the Redis password
 func (m RedisPasswordModel) changePassword() (RedisPasswordModel, tea.Cmd) {
-	// Validate
-	if m.password == "" {
-		m.err = fmt.Errorf("password cannot be empty")
-		return m, nil
-	}
+	// Validate passwords match
 	if m.password != m.confirm {
 		m.err = fmt.Errorf("passwords do not match")
-		return m, nil
-	}
-	if len(m.password) < 8 {
-		m.err = fmt.Errorf("password must be at least 8 characters")
+		m.form = m.buildForm()
 		return m, nil
 	}
 
@@ -117,6 +140,7 @@ func (m RedisPasswordModel) changePassword() (RedisPasswordModel, tea.Cmd) {
 	err := m.redisManager.SetPassword(m.password)
 	if err != nil {
 		m.err = err
+		m.form = m.buildForm()
 		return m, nil
 	}
 
@@ -138,19 +162,22 @@ func (m RedisPasswordModel) View() string {
 		return "Loading..."
 	}
 
-	// If success or error, show message
+	// If success, show message
 	if m.success {
-		msg := m.theme.SuccessStyle.Render("✓ Redis password changed successfully!")
+		msg := m.theme.SuccessStyle.Render(m.theme.Symbols.CheckMark + " Redis password changed successfully!")
 		help := m.theme.Help.Render("Press any key to continue...")
 		content := lipgloss.JoinVertical(lipgloss.Center, "", msg, "", help)
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
+		bordered := m.theme.BorderStyle.Render(content)
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
 	}
 
+	// If error, show message
 	if m.err != nil {
-		msg := m.theme.ErrorStyle.Render(fmt.Sprintf("✗ Error: %v", m.err))
+		msg := m.theme.ErrorStyle.Render(m.theme.Symbols.CrossMark + " Error: " + m.err.Error())
 		help := m.theme.Help.Render("Press any key to continue...")
 		content := lipgloss.JoinVertical(lipgloss.Center, "", msg, "", help)
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
+		bordered := m.theme.BorderStyle.Render(content)
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
 	}
 
 	// Header
@@ -161,49 +188,11 @@ func (m RedisPasswordModel) View() string {
 	if m.config != nil && m.config.RequirePass != "" {
 		currentInfo = m.theme.DescriptionStyle.Render("Current password: ********")
 	} else {
-		currentInfo = m.theme.WarningStyle.Render("No password currently set")
+		currentInfo = m.theme.WarningStyle.Render(m.theme.Symbols.Warning + " No password currently set")
 	}
-
-	// Form fields
-	var formFields []string
-
-	// Password field
-	passwordStyle := m.theme.MenuItem
-	if m.currentField == 0 {
-		passwordStyle = m.theme.SelectedItem
-	}
-	passwordDisplay := ""
-	for i := 0; i < len(m.password); i++ {
-		passwordDisplay += "*"
-	}
-	formFields = append(formFields, passwordStyle.Render(fmt.Sprintf("New Password:     %s_", passwordDisplay)))
-
-	// Confirm field
-	confirmStyle := m.theme.MenuItem
-	if m.currentField == 1 {
-		confirmStyle = m.theme.SelectedItem
-	}
-	confirmDisplay := ""
-	for i := 0; i < len(m.confirm); i++ {
-		confirmDisplay += "*"
-	}
-	formFields = append(formFields, confirmStyle.Render(fmt.Sprintf("Confirm Password: %s_", confirmDisplay)))
-
-	// Submit button
-	submitStyle := m.theme.MenuItem
-	if m.currentField == 2 {
-		submitStyle = m.theme.SelectedItem
-	}
-	formFields = append(formFields, "")
-	formFields = append(formFields, submitStyle.Render("[ Change Password ]"))
-
-	form := lipgloss.JoinVertical(lipgloss.Left, formFields...)
 
 	// Help
-	help := m.theme.Help.Render("Tab/↑↓: Navigate • Enter: Submit • Esc: Cancel • q: Quit")
-
-	// Instructions
-	instructions := m.theme.DescriptionStyle.Render("Password must be at least 8 characters")
+	help := m.theme.Help.Render("Tab/Shift+Tab: Navigate " + m.theme.Symbols.Bullet + " Enter: Submit " + m.theme.Symbols.Bullet + " Esc: Cancel")
 
 	// Combine all sections
 	content := lipgloss.JoinVertical(
@@ -212,9 +201,7 @@ func (m RedisPasswordModel) View() string {
 		"",
 		currentInfo,
 		"",
-		instructions,
-		"",
-		form,
+		m.form.View(),
 		"",
 		help,
 	)

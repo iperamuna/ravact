@@ -5,81 +5,148 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/huh"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/iperamuna/ravact/internal/system"
 	"github.com/iperamuna/ravact/internal/ui/theme"
 )
 
-// FormField represents the currently active field
-type FormField int
-
-const (
-	FieldSiteName FormField = iota
-	FieldDomain
-	FieldRootDir
-	FieldTemplate
-	FieldSSLOption
-	FieldEmail
-	FieldSubmit
-)
-
-// SSLOption represents SSL configuration choice
-type SSLOption int
-
-const (
-	SSLNone SSLOption = iota
-	SSLLetsEncrypt
-)
-
 // AddSiteModel represents the add site screen
 type AddSiteModel struct {
-	theme          *theme.Theme
-	width          int
-	height         int
-	nginxManager   *system.NginxManager
-	templates      []system.NginxTemplate
-	currentField   FormField
-	siteName       string
-	domain         string
-	rootDir        string
-	selectedTemplate int
-	sslOption      SSLOption
-	email          string
-	err            error
-	success        bool
+	theme        *theme.Theme
+	width        int
+	height       int
+	nginxManager *system.NginxManager
+	templates    []system.NginxTemplate
+
+	// Form
+	form *huh.Form
+
+	// Form fields
+	siteName         string
+	domain           string
+	rootDir          string
+	selectedTemplate string
+	sslOption        string
+	email            string
+
+	// State
+	err     error
+	success bool
 }
 
 // NewAddSiteModel creates a new add site model
 func NewAddSiteModel() AddSiteModel {
 	nginxManager := system.NewNginxManager()
-	
+
 	// Set embedded FS if available
 	if EmbeddedFS != (embed.FS{}) {
 		nginxManager.SetEmbeddedFS(&EmbeddedFS)
 	}
-	
+
 	templates := nginxManager.GetTemplates()
-	
-	return AddSiteModel{
-		theme:          theme.DefaultTheme(),
-		nginxManager:   nginxManager,
-		templates:      templates,
-		currentField:   FieldSiteName,
-		siteName:       "",
-		domain:         "",
-		rootDir:        "/var/www/html",
-		selectedTemplate: 0,
-		sslOption:      SSLNone,
-		email:          "",
-		err:            nil,
-		success:        false,
+	t := theme.DefaultTheme()
+
+	m := AddSiteModel{
+		theme:            t,
+		nginxManager:     nginxManager,
+		templates:        templates,
+		siteName:         "",
+		domain:           "",
+		rootDir:          "/var/www/html",
+		selectedTemplate: "static",
+		sslOption:        "none",
+		email:            "",
+		err:              nil,
+		success:          false,
 	}
+
+	// Build template options
+	templateOptions := []huh.Option[string]{}
+	for _, tpl := range templates {
+		templateOptions = append(templateOptions, huh.NewOption(tpl.Name, tpl.ID))
+	}
+	if len(templateOptions) == 0 {
+		templateOptions = append(templateOptions, huh.NewOption("Static HTML", "static"))
+	}
+
+	// Create the huh form
+	m.form = huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Site Name").
+				Description("Unique identifier for the site configuration").
+				Placeholder("mysite").
+				Validate(func(s string) error {
+					if s == "" {
+						return fmt.Errorf("site name is required")
+					}
+					if strings.Contains(s, " ") {
+						return fmt.Errorf("site name cannot contain spaces")
+					}
+					return nil
+				}).
+				Value(&m.siteName),
+
+			huh.NewInput().
+				Title("Domain").
+				Description("Domain name for the site (e.g., example.com)").
+				Placeholder("example.com").
+				Validate(func(s string) error {
+					if s == "" {
+						return fmt.Errorf("domain is required")
+					}
+					return nil
+				}).
+				Value(&m.domain),
+
+			huh.NewInput().
+				Title("Root Directory").
+				Description("Document root path for web files").
+				Placeholder("/var/www/html").
+				Validate(func(s string) error {
+					if s == "" {
+						return fmt.Errorf("root directory is required")
+					}
+					if !strings.HasPrefix(s, "/") {
+						return fmt.Errorf("must be an absolute path")
+					}
+					return nil
+				}).
+				Value(&m.rootDir),
+
+			huh.NewSelect[string]().
+				Title("Template").
+				Description("Nginx configuration template").
+				Options(templateOptions...).
+				Value(&m.selectedTemplate),
+
+			huh.NewSelect[string]().
+				Title("SSL Certificate").
+				Description("SSL/HTTPS configuration").
+				Options(
+					huh.NewOption("None (HTTP only)", "none"),
+					huh.NewOption("Let's Encrypt (Free SSL)", "letsencrypt"),
+				).
+				Value(&m.sslOption),
+
+			huh.NewInput().
+				Title("Email (for Let's Encrypt)").
+				Description("Only required if using Let's Encrypt SSL").
+				Placeholder("admin@example.com").
+				Value(&m.email),
+		),
+	).WithTheme(t.HuhTheme).
+		WithShowHelp(true).
+		WithShowErrors(true)
+
+	return m
 }
 
 // Init initializes the add site screen
 func (m AddSiteModel) Init() tea.Cmd {
-	return nil
+	return m.form.Init()
 }
 
 // Update handles messages
@@ -98,124 +165,50 @@ func (m AddSiteModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return NavigateMsg{Screen: NginxConfigScreen}
 				}
 			}
+			return m, nil
 		}
 
+		// Global keys
 		switch msg.String() {
-		case "ctrl+c", "q":
+		case "ctrl+c":
 			return m, tea.Quit
-
 		case "esc":
-			return m, func() tea.Msg {
-				return NavigateMsg{Screen: NginxConfigScreen}
-			}
-
-		case "tab", "down":
-			m.currentField = FormField((int(m.currentField) + 1) % 7)
-
-		case "shift+tab", "up":
-			m.currentField = FormField((int(m.currentField) - 1 + 7) % 7)
-
-		case "enter":
-			if m.currentField == FieldSubmit {
-				return m.createSite()
-			}
-
-		case "left":
-			switch m.currentField {
-			case FieldTemplate:
-				if m.selectedTemplate > 0 {
-					m.selectedTemplate--
-				}
-			case FieldSSLOption:
-				if m.sslOption > 0 {
-					m.sslOption--
-				}
-			}
-
-		case "right":
-			switch m.currentField {
-			case FieldTemplate:
-				if m.selectedTemplate < len(m.templates)-1 {
-					m.selectedTemplate++
-				}
-			case FieldSSLOption:
-				if m.sslOption < SSLLetsEncrypt {
-					m.sslOption++
-				}
-			}
-
-		case "backspace":
-			switch m.currentField {
-			case FieldSiteName:
-				if len(m.siteName) > 0 {
-					m.siteName = m.siteName[:len(m.siteName)-1]
-				}
-			case FieldDomain:
-				if len(m.domain) > 0 {
-					m.domain = m.domain[:len(m.domain)-1]
-				}
-			case FieldRootDir:
-				if len(m.rootDir) > 0 {
-					m.rootDir = m.rootDir[:len(m.rootDir)-1]
-				}
-			case FieldEmail:
-				if len(m.email) > 0 {
-					m.email = m.email[:len(m.email)-1]
-				}
-			}
-
-		default:
-			// Type into current field
-			if len(msg.String()) == 1 {
-				switch m.currentField {
-				case FieldSiteName:
-					m.siteName += msg.String()
-				case FieldDomain:
-					m.domain += msg.String()
-				case FieldRootDir:
-					m.rootDir += msg.String()
-				case FieldEmail:
-					m.email += msg.String()
+			if m.form.State == huh.StateNormal {
+				return m, func() tea.Msg {
+					return NavigateMsg{Screen: NginxConfigScreen}
 				}
 			}
 		}
 	}
 
-	return m, nil
+	// Update the form
+	form, cmd := m.form.Update(msg)
+	if f, ok := form.(*huh.Form); ok {
+		m.form = f
+	}
+
+	// Check if form is completed
+	if m.form.State == huh.StateCompleted {
+		return m.createSite()
+	}
+
+	return m, cmd
 }
 
 // createSite creates the nginx site configuration
 func (m AddSiteModel) createSite() (AddSiteModel, tea.Cmd) {
-	// Validate inputs
-	if m.siteName == "" {
-		m.err = fmt.Errorf("site name is required")
-		return m, nil
-	}
-	if m.domain == "" {
-		m.err = fmt.Errorf("domain is required")
-		return m, nil
-	}
-	if m.rootDir == "" {
-		m.err = fmt.Errorf("root directory is required")
-		return m, nil
-	}
-	if m.sslOption == SSLLetsEncrypt && m.email == "" {
+	// Validate email for Let's Encrypt
+	if m.sslOption == "letsencrypt" && m.email == "" {
 		m.err = fmt.Errorf("email is required for Let's Encrypt")
 		return m, nil
 	}
 
-	// Get template ID
-	templateID := "static"
-	if len(m.templates) > 0 && m.selectedTemplate < len(m.templates) {
-		templateID = m.templates[m.selectedTemplate].ID
-	}
-
 	// Determine SSL settings
-	useSSL := m.sslOption != SSLNone
-	useCertbot := m.sslOption == SSLLetsEncrypt
+	useSSL := m.sslOption != "none"
+	useCertbot := m.sslOption == "letsencrypt"
 
 	// Create the site
-	err := m.nginxManager.CreateSite(m.siteName, m.domain, m.rootDir, templateID, useSSL, useCertbot)
+	err := m.nginxManager.CreateSite(m.siteName, m.domain, m.rootDir, m.selectedTemplate, useSSL, useCertbot)
 	if err != nil {
 		m.err = err
 		return m, nil
@@ -262,96 +255,42 @@ func (m AddSiteModel) View() string {
 		return "Loading..."
 	}
 
-	// If success or error, show message
+	// If success, show message
 	if m.success {
-		msg := m.theme.SuccessStyle.Render("✓ Site created successfully!")
+		msg := m.theme.SuccessStyle.Render(m.theme.Symbols.CheckMark + " Site created successfully!")
 		help := m.theme.Help.Render("Press any key to continue...")
 		content := lipgloss.JoinVertical(lipgloss.Center, "", msg, "", help)
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
+		bordered := m.theme.BorderStyle.Render(content)
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
 	}
 
+	// If error, show message
 	if m.err != nil {
-		msg := m.theme.ErrorStyle.Render(fmt.Sprintf("✗ Error: %v", m.err))
+		msg := m.theme.ErrorStyle.Render(m.theme.Symbols.CrossMark + " Error: " + m.err.Error())
 		help := m.theme.Help.Render("Press any key to continue...")
 		content := lipgloss.JoinVertical(lipgloss.Center, "", msg, "", help)
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
+		bordered := m.theme.BorderStyle.Render(content)
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
 	}
 
 	// Header
 	header := m.theme.Title.Render("Add Nginx Site")
 
-	// Form fields
-	var formFields []string
-
-	// Site Name
-	siteNameStyle := m.theme.MenuItem
-	if m.currentField == FieldSiteName {
-		siteNameStyle = m.theme.SelectedItem
-	}
-	formFields = append(formFields, siteNameStyle.Render(fmt.Sprintf("Site Name:     %s_", m.siteName)))
-
-	// Domain
-	domainStyle := m.theme.MenuItem
-	if m.currentField == FieldDomain {
-		domainStyle = m.theme.SelectedItem
-	}
-	formFields = append(formFields, domainStyle.Render(fmt.Sprintf("Domain:        %s_", m.domain)))
-
-	// Root Directory
-	rootDirStyle := m.theme.MenuItem
-	if m.currentField == FieldRootDir {
-		rootDirStyle = m.theme.SelectedItem
-	}
-	formFields = append(formFields, rootDirStyle.Render(fmt.Sprintf("Root Dir:      %s_", m.rootDir)))
-
-	// Template Selection
-	templateStyle := m.theme.MenuItem
-	if m.currentField == FieldTemplate {
-		templateStyle = m.theme.SelectedItem
-	}
-	templateName := "static"
-	if len(m.templates) > 0 && m.selectedTemplate < len(m.templates) {
-		templateName = m.templates[m.selectedTemplate].Name
-	}
-	formFields = append(formFields, templateStyle.Render(fmt.Sprintf("Template:      ◀ %s ▶", templateName)))
-
-	// SSL Option
-	sslStyle := m.theme.MenuItem
-	if m.currentField == FieldSSLOption {
-		sslStyle = m.theme.SelectedItem
-	}
-	sslOptions := []string{"None", "Let's Encrypt"}
-	formFields = append(formFields, sslStyle.Render(fmt.Sprintf("SSL:           ◀ %s ▶", sslOptions[m.sslOption])))
-
-	// Email (only show if Let's Encrypt selected)
-	if m.sslOption == SSLLetsEncrypt {
-		emailStyle := m.theme.MenuItem
-		if m.currentField == FieldEmail {
-			emailStyle = m.theme.SelectedItem
-		}
-		formFields = append(formFields, emailStyle.Render(fmt.Sprintf("Email:         %s_", m.email)))
-	}
-
-	// Submit button
-	submitStyle := m.theme.MenuItem
-	if m.currentField == FieldSubmit {
-		submitStyle = m.theme.SelectedItem
-	}
-	formFields = append(formFields, "")
-	formFields = append(formFields, submitStyle.Render("[ Create Site ]"))
-
-	form := lipgloss.JoinVertical(lipgloss.Left, formFields...)
+	// Render the huh form
+	formView := m.form.View()
 
 	// Help text
-	help := m.theme.Help.Render("Tab/↑↓: Navigate • ←→: Change option • Enter: Submit • Esc: Cancel")
+	help := m.theme.Help.Render("Tab/Shift+Tab: Navigate " + m.theme.Symbols.Bullet + " Enter: Select/Submit " + m.theme.Symbols.Bullet + " Esc: Cancel")
 
 	// Template description
 	templateDesc := ""
-	if len(m.templates) > 0 && m.selectedTemplate < len(m.templates) {
-		tpl := m.templates[m.selectedTemplate]
-		templateDesc = m.theme.DescriptionStyle.Render(fmt.Sprintf("  %s", tpl.Description))
-		if len(tpl.RecommendedFor) > 0 {
-			templateDesc += "\n" + m.theme.DescriptionStyle.Render(fmt.Sprintf("  For: %s", strings.Join(tpl.RecommendedFor, ", ")))
+	for _, tpl := range m.templates {
+		if tpl.ID == m.selectedTemplate {
+			templateDesc = m.theme.DescriptionStyle.Render("Template: " + tpl.Description)
+			if len(tpl.RecommendedFor) > 0 {
+				templateDesc += "\n" + m.theme.DescriptionStyle.Render("Recommended for: " + strings.Join(tpl.RecommendedFor, ", "))
+			}
+			break
 		}
 	}
 
@@ -360,7 +299,7 @@ func (m AddSiteModel) View() string {
 		lipgloss.Left,
 		header,
 		"",
-		form,
+		formView,
 		"",
 		templateDesc,
 		"",

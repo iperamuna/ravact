@@ -2,7 +2,9 @@ package screens
 
 import (
 	"fmt"
+	"time"
 
+	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/iperamuna/ravact/internal/system"
@@ -11,15 +13,17 @@ import (
 
 // MySQLManagementModel represents the MySQL management screen
 type MySQLManagementModel struct {
-	theme   *theme.Theme
-	width   int
-	height  int
-	manager *system.MySQLManager
-	config  *system.MySQLConfig
-	cursor  int
-	actions []string
-	err     error
-	success string
+	theme       *theme.Theme
+	width       int
+	height      int
+	manager     *system.MySQLManager
+	config      *system.MySQLConfig
+	cursor      int
+	actions     []string
+	err         error
+	success     string
+	copied      bool
+	copiedTimer int
 }
 
 // NewMySQLManagementModel creates a new MySQL management model
@@ -81,6 +85,31 @@ func (m MySQLManagementModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "enter", " ":
 			return m.executeAction()
+
+		case "c":
+			// Copy configuration to clipboard
+			if m.config != nil {
+				content := fmt.Sprintf("MySQL Configuration\nPort: %d\nBind Address: %s\nConfig Path: %s\nData Dir: %s",
+					m.config.Port, m.config.BindAddress, m.config.ConfigPath, m.config.DataDir)
+				clipboard.WriteAll(content)
+				m.copied = true
+				m.copiedTimer = 3
+				return m, tea.Tick(time.Second, func(t time.Time) tea.Msg {
+					return CopyTimerTickMsg{}
+				})
+			}
+		}
+
+	case CopyTimerTickMsg:
+		if m.copiedTimer > 0 {
+			m.copiedTimer--
+			if m.copiedTimer == 0 {
+				m.copied = false
+			} else {
+				return m, tea.Tick(time.Second, func(t time.Time) tea.Msg {
+					return CopyTimerTickMsg{}
+				})
+			}
 		}
 	}
 
@@ -174,7 +203,7 @@ func (m MySQLManagementModel) View() string {
 	}
 
 	// Header
-	header := m.theme.Title.Render("🗄️  MySQL Management")
+	header := m.theme.Title.Render("MySQL Management")
 
 	// Current config info
 	var configInfo []string
@@ -187,7 +216,7 @@ func (m MySQLManagementModel) View() string {
 	} else {
 		configInfo = append(configInfo, m.theme.WarningStyle.Render("Configuration not loaded"))
 	}
-	
+
 	configInfoSection := lipgloss.JoinVertical(lipgloss.Left, configInfo...)
 
 	// Actions menu
@@ -195,7 +224,7 @@ func (m MySQLManagementModel) View() string {
 	for i, action := range m.actions {
 		cursor := "  "
 		if i == m.cursor {
-			cursor = m.theme.KeyStyle.Render("▶ ")
+			cursor = m.theme.KeyStyle.Render(m.theme.Symbols.Cursor + " ")
 		}
 
 		var renderedItem string
@@ -218,13 +247,16 @@ func (m MySQLManagementModel) View() string {
 	if m.err != nil {
 		messages = append(messages, m.theme.ErrorStyle.Render(fmt.Sprintf("Error: %v", m.err)))
 	}
+	if m.copied {
+		messages = append(messages, m.theme.CopiedStyle.Render(m.theme.Symbols.Copy+" Copied to clipboard!"))
+	}
 	messageSection := ""
 	if len(messages) > 0 {
 		messageSection = lipgloss.JoinVertical(lipgloss.Left, messages...)
 	}
 
 	// Help
-	help := m.theme.Help.Render("↑/↓: Navigate • Enter: Execute • Esc: Back • q: Quit")
+	help := m.theme.Help.Render(m.theme.Symbols.ArrowUp + "/" + m.theme.Symbols.ArrowDown + ": Navigate " + m.theme.Symbols.Bullet + " Enter: Execute " + m.theme.Symbols.Bullet + " c: Copy " + m.theme.Symbols.Bullet + " Esc: Back " + m.theme.Symbols.Bullet + " q: Quit")
 
 	// Combine all sections
 	sections := []string{

@@ -1,6 +1,9 @@
 package screens
 
 import (
+	"time"
+
+	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/iperamuna/ravact/internal/ui/theme"
@@ -8,12 +11,14 @@ import (
 
 // TextDisplayModel represents a text display screen
 type TextDisplayModel struct {
-	theme      *theme.Theme
-	width      int
-	height     int
-	title      string
-	content    string
+	theme        *theme.Theme
+	width        int
+	height       int
+	title        string
+	content      string
 	returnScreen ScreenType
+	copied       bool
+	copiedTimer  int
 }
 
 // NewTextDisplayModel creates a new text display model
@@ -45,6 +50,28 @@ func (m TextDisplayModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, func() tea.Msg {
 				return NavigateMsg{Screen: m.returnScreen}
 			}
+		case "c":
+			// Copy content to clipboard
+			if m.content != "" {
+				clipboard.WriteAll(m.content)
+				m.copied = true
+				m.copiedTimer = 3
+				return m, tea.Tick(time.Second, func(t time.Time) tea.Msg {
+					return CopyTimerTickMsg{}
+				})
+			}
+		}
+
+	case CopyTimerTickMsg:
+		if m.copiedTimer > 0 {
+			m.copiedTimer--
+			if m.copiedTimer == 0 {
+				m.copied = false
+			} else {
+				return m, tea.Tick(time.Second, func(t time.Time) tea.Msg {
+					return CopyTimerTickMsg{}
+				})
+			}
 		}
 	}
 
@@ -58,15 +85,26 @@ func (m TextDisplayModel) View() string {
 
 	header := m.theme.Title.Render(m.title)
 	content := m.theme.MenuItem.Render(m.content)
-	help := m.theme.Help.Render("esc/enter: back • q: quit")
+
+	// Copied indicator
+	copiedMsg := ""
+	if m.copied {
+		copiedMsg = m.theme.CopiedStyle.Render(m.theme.Symbols.Copy + " Copied to clipboard!")
+	}
+
+	help := m.theme.Help.Render("c: Copy " + m.theme.Symbols.Bullet + " Esc/Enter: Back " + m.theme.Symbols.Bullet + " q: Quit")
 
 	sections := []string{
 		header,
 		"",
 		content,
 		"",
-		help,
 	}
+
+	if copiedMsg != "" {
+		sections = append(sections, copiedMsg)
+	}
+	sections = append(sections, help)
 
 	contentSection := lipgloss.JoinVertical(lipgloss.Left, sections...)
 	bordered := m.theme.BorderStyle.Render(contentSection)

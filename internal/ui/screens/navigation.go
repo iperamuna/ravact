@@ -44,6 +44,8 @@ const (
 	PHPExtensionsScreen
 	PHPManagementScreen
 	FrankenPHPClassicScreen
+	DeveloperToolkitScreen
+	FileBrowserScreen
 )
 
 // NavigateMsg is sent when navigating between screens

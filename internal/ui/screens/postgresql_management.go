@@ -2,7 +2,9 @@ package screens
 
 import (
 	"fmt"
+	"time"
 
+	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/iperamuna/ravact/internal/system"
@@ -11,15 +13,17 @@ import (
 
 // PostgreSQLManagementModel represents the PostgreSQL management screen
 type PostgreSQLManagementModel struct {
-	theme   *theme.Theme
-	width   int
-	height  int
-	manager *system.PostgreSQLManager
-	config  *system.PostgreSQLConfig
-	cursor  int
-	actions []string
-	err     error
-	success string
+	theme       *theme.Theme
+	width       int
+	height      int
+	manager     *system.PostgreSQLManager
+	config      *system.PostgreSQLConfig
+	cursor      int
+	actions     []string
+	err         error
+	success     string
+	copied      bool
+	copiedTimer int
 }
 
 // NewPostgreSQLManagementModel creates a new PostgreSQL management model
@@ -75,6 +79,30 @@ func (m PostgreSQLManagementModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "enter", " ":
 			return m.executeAction()
+		case "c":
+			// Copy configuration to clipboard
+			if m.config != nil {
+				content := fmt.Sprintf("PostgreSQL Configuration\nPort: %d\nMax Connections: %d\nShared Buffers: %s\nConfig Path: %s",
+					m.config.Port, m.config.MaxConn, m.config.SharedBuf, m.config.ConfigPath)
+				clipboard.WriteAll(content)
+				m.copied = true
+				m.copiedTimer = 3
+				return m, tea.Tick(time.Second, func(t time.Time) tea.Msg {
+					return CopyTimerTickMsg{}
+				})
+			}
+		}
+
+	case CopyTimerTickMsg:
+		if m.copiedTimer > 0 {
+			m.copiedTimer--
+			if m.copiedTimer == 0 {
+				m.copied = false
+			} else {
+				return m, tea.Tick(time.Second, func(t time.Time) tea.Msg {
+					return CopyTimerTickMsg{}
+				})
+			}
 		}
 	}
 	return m, nil
@@ -162,7 +190,7 @@ func (m PostgreSQLManagementModel) View() string {
 		return "Loading..."
 	}
 
-	header := m.theme.Title.Render("🐘 PostgreSQL Management")
+	header := m.theme.Title.Render("PostgreSQL Management")
 
 	var configInfo []string
 	if m.config != nil {
@@ -174,14 +202,14 @@ func (m PostgreSQLManagementModel) View() string {
 	} else {
 		configInfo = append(configInfo, m.theme.WarningStyle.Render("Configuration not loaded"))
 	}
-	
+
 	configInfoSection := lipgloss.JoinVertical(lipgloss.Left, configInfo...)
 
 	var actionItems []string
 	for i, action := range m.actions {
 		cursor := "  "
 		if i == m.cursor {
-			cursor = m.theme.KeyStyle.Render("▶ ")
+			cursor = m.theme.KeyStyle.Render(m.theme.Symbols.Cursor + " ")
 		}
 		var renderedItem string
 		if i == m.cursor {
@@ -201,12 +229,15 @@ func (m PostgreSQLManagementModel) View() string {
 	if m.err != nil {
 		messages = append(messages, m.theme.ErrorStyle.Render(fmt.Sprintf("Error: %v", m.err)))
 	}
+	if m.copied {
+		messages = append(messages, m.theme.CopiedStyle.Render(m.theme.Symbols.Copy+" Copied to clipboard!"))
+	}
 	messageSection := ""
 	if len(messages) > 0 {
 		messageSection = lipgloss.JoinVertical(lipgloss.Left, messages...)
 	}
 
-	help := m.theme.Help.Render("↑/↓: Navigate • Enter: Execute • Esc: Back • q: Quit")
+	help := m.theme.Help.Render(m.theme.Symbols.ArrowUp + "/" + m.theme.Symbols.ArrowDown + ": Navigate " + m.theme.Symbols.Bullet + " Enter: Execute " + m.theme.Symbols.Bullet + " c: Copy " + m.theme.Symbols.Bullet + " Esc: Back " + m.theme.Symbols.Bullet + " q: Quit")
 
 	sections := []string{
 		header,

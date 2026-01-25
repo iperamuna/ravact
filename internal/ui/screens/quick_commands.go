@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/iperamuna/ravact/internal/models"
+	"github.com/iperamuna/ravact/internal/system"
 	"github.com/iperamuna/ravact/internal/ui/theme"
 )
 
@@ -182,14 +183,19 @@ func (m QuickCommandsModel) View() string {
 		return "Loading..."
 	}
 
-	// Header
-	header := m.theme.Title.Render("Quick Commands")
+	// Header with host info
+	hostInfo := system.GetHostInfo()
+	headerText := "Quick Commands"
+	if hostInfo != "" {
+		headerText = fmt.Sprintf("Quick Commands  %s", m.theme.DescriptionStyle.Render(hostInfo))
+	}
+	header := m.theme.Title.Render(headerText)
 
 	// Group commands by category
 	var menuItems []string
 
 	// Add category: Nginx Commands
-	categoryHeader := m.theme.Label.Render("▼ Nginx Commands")
+	categoryHeader := m.theme.CategoryStyle.Render(m.theme.Symbols.ArrowDown + " Nginx Commands")
 	menuItems = append(menuItems, categoryHeader, "")
 
 	for i := 0; i < 6; i++ {
@@ -202,7 +208,7 @@ func (m QuickCommandsModel) View() string {
 	menuItems = append(menuItems, "")
 
 	// Add category: System Commands
-	categoryHeader = m.theme.Label.Render("▼ System Commands")
+	categoryHeader = m.theme.CategoryStyle.Render(m.theme.Symbols.ArrowDown + " System Commands")
 	menuItems = append(menuItems, categoryHeader, "")
 
 	for i := 6; i < len(m.commands); i++ {
@@ -212,7 +218,7 @@ func (m QuickCommandsModel) View() string {
 	menu := lipgloss.JoinVertical(lipgloss.Left, menuItems...)
 
 	// Help
-	help := m.theme.Help.Render("↑/↓: Navigate • Enter: Execute • Esc: Back • q: Quit")
+	help := m.theme.Help.Render(m.theme.Symbols.ArrowUp + "/" + m.theme.Symbols.ArrowDown + ": Navigate " + m.theme.Symbols.Bullet + " Enter: Execute " + m.theme.Symbols.Bullet + " Esc: Back " + m.theme.Symbols.Bullet + " q: Quit")
 
 	// Warning about root
 	var warning string
@@ -264,7 +270,7 @@ func (m QuickCommandsModel) View() string {
 func (m QuickCommandsModel) renderCommand(index int, cmd models.QuickCommand) string {
 	cursor := "  "
 	if index == m.cursor {
-		cursor = m.theme.KeyStyle.Render("▶ ")
+		cursor = m.theme.KeyStyle.Render(m.theme.Symbols.Cursor + " ")
 	}
 
 	// Add indicators

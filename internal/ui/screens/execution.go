@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/iperamuna/ravact/internal/ui/theme"
@@ -31,20 +32,22 @@ const (
 
 // ExecutionModel represents the execution screen
 type ExecutionModel struct {
-	theme       *theme.Theme
-	width       int
-	height      int
-	command     string
-	description string
-	state       ExecutionState
-	output      []string
-	exitCode    int
-	startTime   time.Time
-	endTime     time.Time
-	maxLines    int
+	theme        *theme.Theme
+	width        int
+	height       int
+	command      string
+	description  string
+	state        ExecutionState
+	output       []string
+	exitCode     int
+	startTime    time.Time
+	endTime      time.Time
+	maxLines     int
 	scrollOffset int
 	autoScroll   bool
 	returnScreen ScreenType
+	copied       bool
+	copiedTimer  int
 }
 
 // ExecutionOutputMsg is sent when new output is received
@@ -54,6 +57,9 @@ type ExecutionOutputMsg struct {
 
 // SpinnerTickMsg is sent to update the spinner animation
 type SpinnerTickMsg struct{}
+
+// CopyTimerTickMsg is sent to clear the copied message
+type CopyTimerTickMsg struct{}
 
 // NewExecutionModel creates a new execution model
 func NewExecutionModel(command, description string, returnScreen ScreenType) ExecutionModel {
@@ -269,6 +275,14 @@ func (m ExecutionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.output = m.output[len(m.output)-m.maxLines:]
 		}
 		
+		// Auto-scroll to bottom when output is added
+		if m.autoScroll {
+			m.scrollOffset = len(m.output) - (m.height - 10)
+			if m.scrollOffset < 0 {
+				m.scrollOffset = 0
+			}
+		}
+		
 		if msg.Error != nil {
 			m.exitCode = 1
 		} else {
@@ -292,6 +306,18 @@ func (m ExecutionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, func() tea.Msg {
 					return NavigateMsg{Screen: m.returnScreen}
 				}
+			}
+
+		case "c":
+			// Copy output to clipboard
+			if len(m.output) > 0 {
+				content := strings.Join(m.output, "\n")
+				clipboard.WriteAll(content)
+				m.copied = true
+				m.copiedTimer = 3
+				return m, tea.Tick(time.Second, func(t time.Time) tea.Msg {
+					return CopyTimerTickMsg{}
+				})
 			}
 
 		case "up", "k":
@@ -318,6 +344,18 @@ func (m ExecutionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.scrollOffset = len(m.output) - (m.height - 10)
 			if m.scrollOffset < 0 {
 				m.scrollOffset = 0
+			}
+		}
+
+	case CopyTimerTickMsg:
+		if m.copiedTimer > 0 {
+			m.copiedTimer--
+			if m.copiedTimer == 0 {
+				m.copied = false
+			} else {
+				return m, tea.Tick(time.Second, func(t time.Time) tea.Msg {
+					return CopyTimerTickMsg{}
+				})
 			}
 		}
 	}
@@ -423,12 +461,18 @@ func (m ExecutionModel) View() string {
 		progress = m.theme.InfoStyle.Render(fmt.Sprintf("%s Running...", spinner[idx]))
 	}
 
+	// Copied indicator
+	var copiedMsg string
+	if m.copied {
+		copiedMsg = m.theme.CopiedStyle.Render(m.theme.Symbols.Copy + " Copied to clipboard!")
+	}
+
 	// Help text
 	var help string
 	if m.state == ExecutionRunning {
-		help = m.theme.Help.Render("↑/↓: Scroll • Ctrl+C: Cancel • Please wait...")
+		help = m.theme.Help.Render(m.theme.Symbols.ArrowUp + "/" + m.theme.Symbols.ArrowDown + ": Scroll • Ctrl+C: Cancel • Please wait...")
 	} else {
-		help = m.theme.Help.Render("↑/↓: Scroll • Enter/Esc: Continue • q: Quit")
+		help = m.theme.Help.Render(m.theme.Symbols.ArrowUp + "/" + m.theme.Symbols.ArrowDown + ": Scroll • c: Copy • Enter/Esc: Continue • q: Quit")
 	}
 
 	// Exit code
@@ -442,8 +486,7 @@ func (m ExecutionModel) View() string {
 	}
 
 	// Combine all sections
-	content := lipgloss.JoinVertical(
-		lipgloss.Left,
+	sections := []string{
 		header,
 		"",
 		desc,
@@ -452,11 +495,20 @@ func (m ExecutionModel) View() string {
 		"",
 		outputBox,
 		"",
-		progress,
-		exitCodeDisplay,
-		"",
-		help,
-	)
+	}
+
+	if progress != "" {
+		sections = append(sections, progress)
+	}
+	if exitCodeDisplay != "" {
+		sections = append(sections, exitCodeDisplay)
+	}
+	if copiedMsg != "" {
+		sections = append(sections, copiedMsg)
+	}
+	sections = append(sections, "", help)
+
+	content := lipgloss.JoinVertical(lipgloss.Left, sections...)
 
 	// Add border and center
 	bordered := m.theme.BorderStyle.Render(content)

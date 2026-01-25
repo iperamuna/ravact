@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/huh"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/iperamuna/ravact/internal/system"
@@ -19,108 +19,127 @@ type SupervisorAddProgramModel struct {
 	width       int
 	height      int
 	manager     *system.SupervisorManager
-	step        int // 0=get name, 1=choose editor, 2=editing, 3=validating
+	step        int // 0=form, 1=editing, 2=result
 	programName string
 	editor      string
-	textInput   textinput.Model
-	editorIndex int
-	editors     []string
+	form        *huh.Form
 	err         error
 	message     string
 }
 
 // NewSupervisorAddProgramModel creates a new add program model
 func NewSupervisorAddProgramModel(manager *system.SupervisorManager) SupervisorAddProgramModel {
-	ti := textinput.New()
-	ti.Placeholder = "Enter program name"
-	ti.Focus()
-	ti.CharLimit = 64
-	ti.Width = 40
+	t := theme.DefaultTheme()
 
-	return SupervisorAddProgramModel{
-		theme:       theme.DefaultTheme(),
+	m := SupervisorAddProgramModel{
+		theme:       t,
 		manager:     manager,
 		step:        0,
-		textInput:   ti,
-		editors:     []string{"nano", "vi"},
-		editorIndex: 0,
+		programName: "",
+		editor:      "nano",
 	}
+
+	m.form = m.buildForm()
+	return m
+}
+
+func (m *SupervisorAddProgramModel) buildForm() *huh.Form {
+	return huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Program Name").
+				Description("Unique identifier for the supervisor program").
+				Placeholder("myprogram").
+				Validate(func(s string) error {
+					if s == "" {
+						return fmt.Errorf("program name cannot be empty")
+					}
+					if strings.Contains(s, " ") {
+						return fmt.Errorf("program name cannot contain spaces")
+					}
+					return nil
+				}).
+				Value(&m.programName),
+
+			huh.NewSelect[string]().
+				Title("Editor").
+				Description("Choose editor to configure the program").
+				Options(
+					huh.NewOption("Nano (recommended for beginners)", "nano"),
+					huh.NewOption("Vi/Vim", "vi"),
+				).
+				Value(&m.editor),
+		),
+	).WithTheme(m.theme.HuhTheme).
+		WithShowHelp(true).
+		WithShowErrors(true)
 }
 
 func (m SupervisorAddProgramModel) Init() tea.Cmd {
-	return textinput.Blink
+	return m.form.Init()
 }
 
 func (m SupervisorAddProgramModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
-
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 		return m, nil
 
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c", "q":
-			if m.step == 2 {
-				// Don't quit while editing
-				return m, nil
-			}
-			return m, tea.Quit
-		case "esc":
-			if m.step == 2 {
-				// Don't allow escape while editing
-				return m, nil
-			}
-			return m, func() tea.Msg {
-				return NavigateMsg{Screen: SupervisorManagementScreen}
-			}
-		case "enter":
-			return m.handleEnter()
-		case "up", "k":
-			if m.step == 1 && m.editorIndex > 0 {
-				m.editorIndex--
-			}
-		case "down", "j":
-			if m.step == 1 && m.editorIndex < len(m.editors)-1 {
-				m.editorIndex++
-			}
+	case ExecutionCompleteMsg:
+		// Handle result from editor
+		m.step = 2
+		if msg.Success {
+			m.message = msg.Output
+			m.err = nil
+		} else {
+			m.err = msg.Error
 		}
-	}
-
-	if m.step == 0 {
-		m.textInput, cmd = m.textInput.Update(msg)
-	}
-	return m, cmd
-}
-
-func (m SupervisorAddProgramModel) handleEnter() (SupervisorAddProgramModel, tea.Cmd) {
-	switch m.step {
-	case 0: // Get program name
-		name := m.textInput.Value()
-		if name == "" {
-			m.err = fmt.Errorf("program name cannot be empty")
-			return m, nil
-		}
-		m.programName = name
-		m.step = 1
-		m.err = nil
 		return m, nil
 
-	case 1: // Choose editor
-		m.editor = m.editors[m.editorIndex]
-		return m, m.openEditor()
+	case tea.KeyMsg:
+		// Handle result state
+		if m.step == 2 {
+			switch msg.String() {
+			case "enter", " ", "esc":
+				return m, func() tea.Msg {
+					return NavigateMsg{Screen: SupervisorManagementScreen}
+				}
+			}
+			return m, nil
+		}
 
-	case 3: // After validation, return to management
-		return m, func() tea.Msg {
-			return NavigateMsg{
-				Screen: SupervisorManagementScreen,
-				Data: map[string]interface{}{
-					"success": m.message,
-				},
+		// Handle editing state
+		if m.step == 1 {
+			return m, nil
+		}
+
+		switch msg.String() {
+		case "ctrl+c":
+			return m, tea.Quit
+		case "esc":
+			if m.step == 0 && m.form.State == huh.StateNormal {
+				return m, func() tea.Msg {
+					return NavigateMsg{Screen: SupervisorManagementScreen}
+				}
 			}
 		}
+	}
+
+	// Handle form in step 0
+	if m.step == 0 {
+		form, cmd := m.form.Update(msg)
+		if f, ok := form.(*huh.Form); ok {
+			m.form = f
+		}
+
+		// Check if form is completed
+		if m.form.State == huh.StateCompleted {
+			m.step = 1
+			return m, m.openEditor()
+		}
+
+		return m, cmd
 	}
 
 	return m, nil
@@ -197,75 +216,46 @@ func (m SupervisorAddProgramModel) View() string {
 	var content []string
 
 	switch m.step {
-	case 0: // Get program name
-		header := m.theme.Title.Render("➕ Add Supervisor Program - Step 1")
+	case 0: // Form input
+		header := m.theme.Title.Render("Add Supervisor Program")
 		content = append(content, header)
 		content = append(content, "")
-		
+
 		if m.err != nil {
-			content = append(content, m.theme.ErrorStyle.Render("Error: "+m.err.Error()))
+			content = append(content, m.theme.ErrorStyle.Render(m.theme.Symbols.CrossMark+" Error: "+m.err.Error()))
 			content = append(content, "")
 		}
-		
-		content = append(content, m.theme.Label.Render("Program Name:"))
-		content = append(content, m.textInput.View())
-		content = append(content, "")
-		content = append(content, m.theme.Help.Render("Enter: Next • Esc: Cancel • q: Quit"))
 
-	case 1: // Choose editor
-		header := m.theme.Title.Render("➕ Add Supervisor Program - Step 2")
+		content = append(content, m.form.View())
+		content = append(content, "")
+		content = append(content, m.theme.Help.Render("Tab: Navigate "+m.theme.Symbols.Bullet+" Enter: Submit "+m.theme.Symbols.Bullet+" Esc: Cancel"))
+
+	case 1: // Editing in progress
+		header := m.theme.Title.Render("Add Supervisor Program - Editing")
 		content = append(content, header)
 		content = append(content, "")
-		content = append(content, m.theme.Label.Render(fmt.Sprintf("Program: %s", m.programName)))
-		content = append(content, "")
-		content = append(content, m.theme.Label.Render("Choose your editor:"))
-		content = append(content, "")
-		
-		for i, editor := range m.editors {
-			cursor := "  "
-			if i == m.editorIndex {
-				cursor = m.theme.KeyStyle.Render("▶ ")
-			}
-			
-			var line string
-			if i == m.editorIndex {
-				line = m.theme.SelectedItem.Render(fmt.Sprintf("%s%s", cursor, editor))
-			} else {
-				line = m.theme.MenuItem.Render(fmt.Sprintf("%s%s", cursor, editor))
-			}
-			content = append(content, line)
-		}
-		
-		content = append(content, "")
-		content = append(content, m.theme.Help.Render("↑/↓: Select • Enter: Open Editor • Esc: Cancel"))
-
-	case 2: // Editing in progress
-		header := m.theme.Title.Render("➕ Add Supervisor Program - Editing")
-		content = append(content, header)
-		content = append(content, "")
-		content = append(content, m.theme.Label.Render("Editor is open in the terminal..."))
+		content = append(content, m.theme.InfoStyle.Render("Editor is open in the terminal..."))
 		content = append(content, "")
 		content = append(content, m.theme.DescriptionStyle.Render("Editing configuration file with "+m.editor))
 		content = append(content, m.theme.DescriptionStyle.Render("Save and exit when done"))
 
-	case 3: // Validation result
-		header := m.theme.Title.Render("➕ Add Supervisor Program - Result")
+	case 2: // Result
+		header := m.theme.Title.Render("Add Supervisor Program - Result")
 		content = append(content, header)
 		content = append(content, "")
-		
+
 		if m.err != nil {
-			content = append(content, m.theme.ErrorStyle.Render("❌ Configuration Error"))
+			content = append(content, m.theme.ErrorStyle.Render(m.theme.Symbols.CrossMark+" Configuration Error"))
 			content = append(content, "")
 			content = append(content, m.theme.ErrorStyle.Render(m.err.Error()))
 			content = append(content, "")
-			content = append(content, m.theme.WarningStyle.Render("The configuration is invalid and was not applied."))
-			content = append(content, m.theme.DescriptionStyle.Render("Program was not added to Supervisor."))
+			content = append(content, m.theme.WarningStyle.Render(m.theme.Symbols.Warning+" The configuration is invalid and was not applied."))
 		} else {
-			content = append(content, m.theme.SuccessStyle.Render("✓ "+m.message))
+			content = append(content, m.theme.SuccessStyle.Render(m.theme.Symbols.CheckMark+" "+m.message))
 			content = append(content, "")
 			content = append(content, m.theme.DescriptionStyle.Render("Configuration validated successfully"))
 		}
-		
+
 		content = append(content, "")
 		content = append(content, m.theme.Help.Render("Enter: Return to Menu"))
 	}
