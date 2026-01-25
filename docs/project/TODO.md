@@ -1,8 +1,20 @@
-# Ravact TODO
+# Ravact TODO / Roadmap
 
-## ✅ Status: Feature Complete (v0.1.3)
+[← Back to Documentation](../README.md)
 
-All core features have been implemented and are production-ready. See [PROJECT_STATUS.md](docs/project/PROJECT_STATUS.md) for full details.
+## ✅ Status: Feature Complete (v0.2.1)
+
+All core features have been implemented and are production-ready. See [PROJECT_STATUS.md](PROJECT_STATUS.md) for full details.
+
+### Recently Completed (v0.2.0)
+- ✅ Developer Toolkit - 34+ essential commands for Laravel/WordPress/PHP/Security
+- ✅ File Browser - Full-featured terminal file manager
+- ✅ Modern Forms - huh library integration with custom theme
+- ✅ Categorized Menus - Reorganized menu structure
+- ✅ Copy to Clipboard - Press `c` on most screens
+- ✅ xterm.js Compatibility - Works in web-based terminals
+- ✅ Terminal Detection - Graceful fallbacks for different terminals
+- ✅ Keyboard Shortcuts Help - Press `?` in File Browser
 
 ---
 
@@ -89,9 +101,12 @@ None currently reported! All features are working as expected.
 ### Code Standards
 - Follow existing Model pattern (see `internal/ui/screens/redis_config_screen.go`)
 - Use `m.theme.*` for all styling
+- Use `m.theme.Symbols.*` for terminal-safe icons/symbols
+- Use `m.theme.HuhTheme` for huh forms (not `huh.ThemeDracula()`)
 - Navigate with `NavigateMsg`, not function calls
 - Validate all user input
 - Handle errors gracefully
+- Add copy support (`c` key) to screens with displayable content
 
 ### Testing Checklist
 - [ ] Unit tests pass
@@ -106,8 +121,8 @@ None currently reported! All features are working as expected.
 ## 📞 Support
 
 - **Issues:** Report on GitHub
-- **Documentation:** See `docs/` directory
-- **Testing:** See `docs/testing/COMPLETE_TEST_CASES.md`
+- **Documentation:** See [Documentation Index](../README.md)
+- **Testing:** See [Testing Guide](../testing/TESTING_GUIDE.md)
 
 ---
 
