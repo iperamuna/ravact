@@ -1083,7 +1083,7 @@ eval $(ssh-agent -s) > /dev/null 2>&1
 
 # Add all available keys (ignore errors for keys with passphrases)
 for key in ~/.ssh/id_* ; do
-    if [ -f "$key" ] && [ ! -f "$key.pub" ] || [ "${key%.pub}" != "$key" ]; then
+    if [ -f "$key" ] && [ ! -f "$key.pub" ] || [ "${key%%.pub}" != "$key" ]; then
         continue
     fi
     # Only add private keys (files without .pub extension that have a matching .pub file)
