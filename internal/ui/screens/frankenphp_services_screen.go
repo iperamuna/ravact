@@ -20,8 +20,10 @@ type FrankenPHPService struct {
 	Status      string // running, stopped, failed
 	Enabled     bool
 	SiteRoot    string
+	Docroot     string
 	Port        string
 	User        string
+	ConnType    string // "socket" or "port"
 }
 
 // FPServicesState represents the current state of the screen
@@ -52,6 +54,7 @@ type FrankenPHPServicesModel struct {
 	editSiteRoot string
 	editDocroot  string
 	editDomains  string
+	editConnType string
 	editPort     string
 	editUser     string
 	editGroup    string
@@ -145,50 +148,105 @@ func (m *FrankenPHPServicesModel) loadFrankenPHPServices() []FrankenPHPService {
 	return services
 }
 
+// ServiceConfig holds parsed service configuration
+type ServiceConfig struct {
+	SiteRoot string
+	Docroot  string
+	Port     string
+	User     string
+	Group    string
+	ConnType string // "socket", "port", or "both"
+}
+
 // parseServiceFile extracts configuration from a service file
 func (m *FrankenPHPServicesModel) parseServiceFile(path string) (siteRoot, port, user string) {
+	config := m.parseServiceFileDetailed(path)
+	return config.SiteRoot, config.Port, config.User
+}
+
+// parseServiceFileDetailed extracts full configuration from a service file
+func (m *FrankenPHPServicesModel) parseServiceFileDetailed(path string) ServiceConfig {
+	config := ServiceConfig{}
+	
 	cmd := exec.Command("cat", path)
 	output, err := cmd.Output()
 	if err != nil {
-		return "", "", ""
+		return config
 	}
 
 	content := string(output)
 	lines := strings.Split(content, "\n")
+	
+	hasSocket := false
+	hasPort := false
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "WorkingDirectory=") {
-			siteRoot = strings.TrimPrefix(line, "WorkingDirectory=")
+			config.SiteRoot = strings.TrimPrefix(line, "WorkingDirectory=")
 		} else if strings.HasPrefix(line, "User=") {
-			user = strings.TrimPrefix(line, "User=")
-		} else if strings.Contains(line, "--listen") && strings.Contains(line, ":") {
-			// Extract port from --listen 127.0.0.1:8000
-			parts := strings.Split(line, ":")
+			config.User = strings.TrimPrefix(line, "User=")
+		} else if strings.HasPrefix(line, "Group=") {
+			config.Group = strings.TrimPrefix(line, "Group=")
+		} else if strings.Contains(line, "--root") {
+			// Extract docroot from --root /path/to/docroot
+			parts := strings.Split(line, "--root")
 			if len(parts) >= 2 {
-				// Get last part which should contain port
-				for _, p := range parts {
-					p = strings.TrimSpace(p)
-					if len(p) > 0 && len(p) <= 5 {
-						// Check if it looks like a port number
-						isPort := true
-						for _, c := range p {
-							if c < '0' || c > '9' {
-								isPort = false
-								break
-							}
+				docPart := strings.TrimSpace(parts[1])
+				// Get the path (first word after --root)
+				docParts := strings.Fields(docPart)
+				if len(docParts) > 0 {
+					config.Docroot = strings.TrimSuffix(docParts[0], "\\")
+				}
+			}
+		} else if strings.Contains(line, "--listen") {
+			// Check for socket or port
+			if strings.Contains(line, "unix:") {
+				hasSocket = true
+			}
+			if strings.Contains(line, "127.0.0.1:") || strings.Contains(line, "0.0.0.0:") {
+				hasPort = true
+				// Extract port number
+				// Look for pattern like 127.0.0.1:8000
+				portIdx := strings.Index(line, "127.0.0.1:")
+				if portIdx == -1 {
+					portIdx = strings.Index(line, "0.0.0.0:")
+				}
+				if portIdx != -1 {
+					portStart := portIdx + len("127.0.0.1:")
+					if strings.Contains(line, "0.0.0.0:") {
+						portStart = portIdx + len("0.0.0.0:")
+					}
+					remaining := line[portStart:]
+					// Extract digits
+					portNum := ""
+					for _, c := range remaining {
+						if c >= '0' && c <= '9' {
+							portNum += string(c)
+						} else {
+							break
 						}
-						if isPort && p != "" {
-							port = strings.Split(p, " ")[0]
-							port = strings.TrimSuffix(port, "\\")
-						}
+					}
+					if portNum != "" {
+						config.Port = portNum
 					}
 				}
 			}
 		}
 	}
 
-	return siteRoot, port, user
+	// Determine connection type
+	if hasSocket && hasPort {
+		config.ConnType = "port" // Default to port when both present
+	} else if hasSocket {
+		config.ConnType = "socket"
+	} else if hasPort {
+		config.ConnType = "port"
+	} else {
+		config.ConnType = "socket" // Default
+	}
+
+	return config
 }
 
 // Init initializes the screen
@@ -205,8 +263,8 @@ func (m FrankenPHPServicesModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
-		// Clear messages on any key
-		if m.message != "" || m.err != nil {
+		// Clear messages on any key (except in edit mode)
+		if m.state != FPServicesStateEdit && (m.message != "" || m.err != nil) {
 			m.message = ""
 			m.err = nil
 		}
@@ -217,13 +275,22 @@ func (m FrankenPHPServicesModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case FPServicesStateActions:
 			return m.updateActions(msg)
 		case FPServicesStateEdit:
-			return m.updateEdit(msg)
+			// Handle escape to cancel edit
+			if msg.String() == "esc" {
+				m.state = FPServicesStateActions
+				m.editForm = nil
+				return m, nil
+			}
+			if msg.String() == "ctrl+c" {
+				return m, tea.Quit
+			}
+			// Let form handle the key
 		case FPServicesStateConfirm:
 			return m.updateConfirm(msg)
 		}
 	}
 
-	// Update form if in edit state
+	// Update form if in edit state (handles all messages including keys)
 	if m.state == FPServicesStateEdit && m.editForm != nil {
 		form, cmd := m.editForm.Update(msg)
 		if f, ok := form.(*huh.Form); ok {
@@ -440,11 +507,46 @@ func (m FrankenPHPServicesModel) doConfirmedAction() (tea.Model, tea.Cmd) {
 
 // loadServiceForEdit loads service config into edit form fields
 func (m *FrankenPHPServicesModel) loadServiceForEdit(service FrankenPHPService) {
-	m.editSiteRoot = service.SiteRoot
-	m.editPort = service.Port
-	m.editUser = service.User
-	m.editGroup = service.User // Often same as user
-	m.editDocroot = ""
+	// Read values from service file to get latest data
+	config := m.parseServiceFileDetailed(service.ServiceFile)
+	
+	// Use parsed values, fallback to service struct values
+	if config.SiteRoot != "" {
+		m.editSiteRoot = config.SiteRoot
+	} else {
+		m.editSiteRoot = service.SiteRoot
+	}
+	
+	// Document root
+	m.editDocroot = config.Docroot
+	
+	// Connection type
+	if config.ConnType != "" {
+		m.editConnType = config.ConnType
+	} else {
+		m.editConnType = "socket"
+	}
+	
+	// Port
+	if config.Port != "" {
+		m.editPort = config.Port
+	} else {
+		m.editPort = "8000" // Default
+	}
+	
+	// User and group
+	if config.User != "" {
+		m.editUser = config.User
+	} else {
+		m.editUser = service.User
+	}
+	
+	if config.Group != "" {
+		m.editGroup = config.Group
+	} else {
+		m.editGroup = m.editUser // Often same as user
+	}
+	
 	m.editDomains = ""
 
 	// Try to read nginx config for domains
@@ -466,8 +568,8 @@ func (m *FrankenPHPServicesModel) buildEditForm() *huh.Form {
 
 			huh.NewInput().
 				Key("docroot").
-				Title("Document Root (optional)").
-				Description("Web-accessible directory (e.g., /public for Laravel)").
+				Title("Web Accessible Directory").
+				Description("Document root (e.g., /var/www/site/public)").
 				Value(&m.editDocroot),
 
 			huh.NewInput().
@@ -476,10 +578,20 @@ func (m *FrankenPHPServicesModel) buildEditForm() *huh.Form {
 				Description("Space-separated domain names").
 				Value(&m.editDomains),
 
+			huh.NewSelect[string]().
+				Key("connType").
+				Title("How Nginx Connects to FrankenPHP").
+				Description("Connection method between Nginx and FrankenPHP").
+				Options(
+					huh.NewOption("Unix Socket (recommended)", "socket"),
+					huh.NewOption("TCP Port", "port"),
+				).
+				Value(&m.editConnType),
+
 			huh.NewInput().
 				Key("port").
 				Title("Port").
-				Description("TCP port for FrankenPHP").
+				Description("TCP port for FrankenPHP (used when connection type is Port)").
 				Value(&m.editPort),
 
 			huh.NewInput().
@@ -513,11 +625,10 @@ func (m FrankenPHPServicesModel) saveServiceConfig() (tea.Model, tea.Cmd) {
 		if v := m.editForm.GetString("siteRoot"); v != "" {
 			m.editSiteRoot = v
 		}
-		if v := m.editForm.GetString("docroot"); v != "" {
-			m.editDocroot = v
-		}
-		if v := m.editForm.GetString("domains"); v != "" {
-			m.editDomains = v
+		m.editDocroot = m.editForm.GetString("docroot")
+		m.editDomains = m.editForm.GetString("domains")
+		if v := m.editForm.GetString("connType"); v != "" {
+			m.editConnType = v
 		}
 		if v := m.editForm.GetString("port"); v != "" {
 			m.editPort = v
@@ -530,17 +641,30 @@ func (m FrankenPHPServicesModel) saveServiceConfig() (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Build the listen directive based on connection type
+	var listenDirective string
+	if m.editConnType == "socket" {
+		listenDirective = fmt.Sprintf("--listen unix:/run/frankenphp/%s.sock", service.SiteKey)
+	} else {
+		listenDirective = fmt.Sprintf("--listen 127.0.0.1:%s", m.editPort)
+	}
+
 	// Build update script
-	script := fmt.Sprintf(`
+	script := fmt.Sprintf(`#!/bin/bash
+set -e
+
 echo "Updating service configuration for %s..."
 echo ""
 
-# Update systemd service file
 SERVICE_FILE="%s"
 SITE_ROOT="%s"
+DOCROOT="%s"
+CONN_TYPE="%s"
 PORT="%s"
 USER="%s"
 GROUP="%s"
+SITE_KEY="%s"
+LISTEN_DIRECTIVE="%s"
 
 # Create backup
 cp "$SERVICE_FILE" "${SERVICE_FILE}.bak"
@@ -548,28 +672,71 @@ echo "✓ Created backup: ${SERVICE_FILE}.bak"
 
 # Update WorkingDirectory
 sed -i "s|WorkingDirectory=.*|WorkingDirectory=${SITE_ROOT}|" "$SERVICE_FILE"
-echo "✓ Updated WorkingDirectory"
+echo "✓ Updated WorkingDirectory to ${SITE_ROOT}"
 
 # Update User
 sed -i "s|User=.*|User=${USER}|" "$SERVICE_FILE"
-echo "✓ Updated User"
+echo "✓ Updated User to ${USER}"
 
 # Update Group
 sed -i "s|Group=.*|Group=${GROUP}|" "$SERVICE_FILE"
-echo "✓ Updated Group"
+echo "✓ Updated Group to ${GROUP}"
 
-# Update port in ExecStart (if present)
-sed -i "s|127.0.0.1:[0-9]*|127.0.0.1:${PORT}|g" "$SERVICE_FILE"
-echo "✓ Updated Port"
+# Update --root (docroot) in ExecStart
+if [ -n "$DOCROOT" ]; then
+    sed -i "s|--root [^ \\\\]*|--root ${DOCROOT}|g" "$SERVICE_FILE"
+    echo "✓ Updated document root to ${DOCROOT}"
+fi
+
+# Update --listen directive based on connection type
+# Use a temporary file approach to avoid sed escaping issues
+
+TMP_FILE=$(mktemp)
+while IFS= read -r line; do
+    if [[ "$line" == ExecStart=* ]]; then
+        # Remove all existing --listen arguments
+        CLEAN_LINE=$(echo "$line" | sed 's/--listen [^ \\]* *\\* *//g' | sed 's/--listen [^ ]*//g' | sed 's/  */ /g')
+        
+        # Insert new listen directive before --root or after php-server
+        if echo "$CLEAN_LINE" | grep -q -- "--root"; then
+            NEW_LINE=$(echo "$CLEAN_LINE" | sed "s|--root|${LISTEN_DIRECTIVE} \\\\\n    --root|")
+        else
+            NEW_LINE=$(echo "$CLEAN_LINE" | sed "s|php-server|php-server \\\\\n    ${LISTEN_DIRECTIVE}|")
+        fi
+        echo "$NEW_LINE" >> "$TMP_FILE"
+    else
+        echo "$line" >> "$TMP_FILE"
+    fi
+done < "$SERVICE_FILE"
+
+mv "$TMP_FILE" "$SERVICE_FILE"
+chmod 644 "$SERVICE_FILE"
+
+if [ "$CONN_TYPE" = "socket" ]; then
+    echo "✓ Updated to use Unix socket: /run/frankenphp/${SITE_KEY}.sock"
+else
+    echo "✓ Updated to use TCP port: ${PORT}"
+fi
 
 # Reload systemd
 systemctl daemon-reload
 echo "✓ Reloaded systemd"
 
 echo ""
+echo "════════════════════════════════════════════════════════"
 echo "Service configuration updated!"
-echo "Restart the service to apply changes: systemctl restart %s"
-`, service.Name, service.ServiceFile, m.editSiteRoot, m.editPort, m.editUser, m.editGroup, service.Name)
+echo "════════════════════════════════════════════════════════"
+echo ""
+echo "Connection: ${CONN_TYPE}"
+if [ "$CONN_TYPE" = "socket" ]; then
+    echo "Socket: /run/frankenphp/${SITE_KEY}.sock"
+else
+    echo "Port: ${PORT}"
+fi
+echo ""
+echo "Restart the service to apply changes:"
+echo "  systemctl restart %s"
+`, service.Name, service.ServiceFile, m.editSiteRoot, m.editDocroot, m.editConnType, m.editPort, m.editUser, m.editGroup, service.SiteKey, listenDirective, service.Name)
 
 	m.state = FPServicesStateList
 	m.editForm = nil

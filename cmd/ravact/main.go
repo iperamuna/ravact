@@ -19,6 +19,7 @@ var embeddedAssets embed.FS
 // Model represents the root application model
 type Model struct {
 	currentScreen  screens.ScreenType
+	previousScreen screens.ScreenType
 	splash         screens.SplashModel
 	mainMenu       screens.MainMenuModel
 	setupMenu      screens.SetupMenuModel
@@ -129,7 +130,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.EnableMouseCellMotion
 		}
 
+	case screens.BackMsg:
+		// Go back to previous screen
+		if m.previousScreen != 0 {
+			m.currentScreen = m.previousScreen
+			m.previousScreen = screens.MainMenuScreen // Reset to main menu as fallback
+		} else {
+			m.currentScreen = screens.MainMenuScreen
+		}
+		return m, nil
+
 	case screens.NavigateMsg:
+		// Don't set previousScreen if coming from ExecutionScreen
+		// (we want to go back to where we were before execution, not to execution)
+		if m.currentScreen != screens.ExecutionScreen {
+			m.previousScreen = m.currentScreen
+		}
 		m.currentScreen = msg.Screen
 		
 		// Handle screen-specific initialization with data
@@ -201,7 +217,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.Data != nil {
 				if data, ok := msg.Data.(map[string]interface{}); ok {
 					if site, ok := data["site"].(system.NginxSite); ok {
+						// For nginx site editing
 						m.editorSelection = screens.NewEditorSelectionModel(site)
+					} else if file, ok := data["file"].(string); ok {
+						// For generic file editing (e.g., FrankenPHP service files)
+						description := "file"
+						if desc, ok := data["description"].(string); ok {
+							description = desc
+						}
+						m.editorSelection = screens.NewEditorSelectionModelForFile(file, description, screens.FrankenPHPServicesScreen)
 					}
 				}
 			}
@@ -458,18 +482,72 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, initCmd
 	
 	case screens.ExecutionStartMsg:
-		// Switch to execution screen and start execution
-		m.currentScreen = screens.ExecutionScreen
-		
-		// Determine return screen based on current screen
+		// Determine return screen based on current screen (before changing it)
 		returnScreen := screens.MainMenuScreen
 		switch m.currentScreen {
+		// Setup screens
 		case screens.SetupActionScreen:
 			returnScreen = screens.SetupMenuScreen
+		case screens.SetupMenuScreen:
+			returnScreen = screens.SetupMenuScreen
+		
+		// Quick commands
 		case screens.QuickCommandsScreen:
 			returnScreen = screens.QuickCommandsScreen
+		
+		// FrankenPHP screens
+		case screens.FrankenPHPServicesScreen:
+			returnScreen = screens.FrankenPHPServicesScreen
+		case screens.FrankenPHPClassicScreen:
+			returnScreen = screens.FrankenPHPClassicScreen
+		
+		// Site commands and related
+		case screens.SiteCommandsScreen:
+			returnScreen = screens.SiteCommandsScreen
+		case screens.GitManagementScreen:
+			returnScreen = screens.GitManagementScreen
+		case screens.LaravelPermissionsScreen:
+			returnScreen = screens.LaravelPermissionsScreen
+		case screens.NodeVersionScreen:
+			returnScreen = screens.SiteCommandsScreen
+		case screens.PHPVersionScreen:
+			returnScreen = screens.SiteCommandsScreen
+		
+		// Config menu screens
+		case screens.ConfigMenuScreen:
+			returnScreen = screens.ConfigMenuScreen
+		case screens.NginxConfigScreen:
+			returnScreen = screens.NginxConfigScreen
+		case screens.RedisConfigScreen:
+			returnScreen = screens.RedisConfigScreen
+		case screens.MySQLManagementScreen:
+			returnScreen = screens.MySQLManagementScreen
+		case screens.PostgreSQLManagementScreen:
+			returnScreen = screens.PostgreSQLManagementScreen
+		case screens.PHPFPMManagementScreen:
+			returnScreen = screens.PHPFPMManagementScreen
+		case screens.SupervisorManagementScreen:
+			returnScreen = screens.SupervisorManagementScreen
+		case screens.FirewallManagementScreen:
+			returnScreen = screens.FirewallManagementScreen
+		
+		// PHP screens
+		case screens.PHPInstallScreen:
+			returnScreen = screens.PHPInstallScreen
+		case screens.PHPExtensionsScreen:
+			returnScreen = screens.PHPExtensionsScreen
+		
+		// SSL screens
+		case screens.SSLOptionsScreen:
+			returnScreen = screens.SSLOptionsScreen
+		
+		// Dragonfly
+		case screens.DragonflyInstallScreen:
+			returnScreen = screens.DragonflyInstallScreen
 		}
 		
+		// Switch to execution screen and start execution
+		m.currentScreen = screens.ExecutionScreen
 		m.execution = screens.NewExecutionModel(msg.Command, msg.Description, returnScreen)
 		initCmd := m.execution.Init()
 		
@@ -492,6 +570,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(initCmd, func() tea.Msg { return sizeMsg })
 		}
 		return m, initCmd
+
+	case screens.EditorCompleteMsg:
+		// Editor finished - go back to previous screen
+		// The BackMsg will be handled by the navigation stack
+		return m, func() tea.Msg {
+			return screens.BackMsg{}
+		}
 
 	case screens.QuitMsg:
 		return m, tea.Quit

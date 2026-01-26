@@ -12,16 +12,18 @@ import (
 
 // EditorSelectionModel represents the editor selection screen
 type EditorSelectionModel struct {
-	theme      *theme.Theme
-	width      int
-	height     int
-	site       system.NginxSite
-	cursor     int
-	editors    []string
-	filePath   string
+	theme       *theme.Theme
+	width       int
+	height      int
+	site        system.NginxSite
+	cursor      int
+	editors     []string
+	filePath    string
+	description string
+	returnScreen ScreenType
 }
 
-// NewEditorSelectionModel creates a new editor selection model
+// NewEditorSelectionModel creates a new editor selection model for nginx sites
 func NewEditorSelectionModel(site system.NginxSite) EditorSelectionModel {
 	editors := []string{
 		"nano - User-friendly editor (recommended)",
@@ -30,11 +32,31 @@ func NewEditorSelectionModel(site system.NginxSite) EditorSelectionModel {
 	}
 	
 	return EditorSelectionModel{
-		theme:    theme.DefaultTheme(),
-		site:     site,
-		cursor:   0,
-		editors:  editors,
-		filePath: site.ConfigPath,
+		theme:        theme.DefaultTheme(),
+		site:         site,
+		cursor:       0,
+		editors:      editors,
+		filePath:     site.ConfigPath,
+		description:  site.Name,
+		returnScreen: ConfigEditorScreen,
+	}
+}
+
+// NewEditorSelectionModelForFile creates a new editor selection model for any file
+func NewEditorSelectionModelForFile(filePath, description string, returnScreen ScreenType) EditorSelectionModel {
+	editors := []string{
+		"nano - User-friendly editor (recommended)",
+		"vi - Classic Unix editor (advanced)",
+		"← Cancel",
+	}
+	
+	return EditorSelectionModel{
+		theme:        theme.DefaultTheme(),
+		cursor:       0,
+		editors:      editors,
+		filePath:     filePath,
+		description:  description,
+		returnScreen: returnScreen,
 	}
 }
 
@@ -58,13 +80,7 @@ func (m EditorSelectionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "esc":
 			return m, func() tea.Msg {
-				return NavigateMsg{
-					Screen: ConfigEditorScreen,
-					Data: map[string]interface{}{
-						"action": "edit_nginx_site",
-						"site":   m.site,
-					},
-				}
+				return BackMsg{}
 			}
 
 		case "up", "k":
@@ -91,60 +107,40 @@ func (m EditorSelectionModel) executeSelection() (EditorSelectionModel, tea.Cmd)
 	case 0: // nano
 		return m, tea.ExecProcess(exec.Command("nano", m.filePath), func(err error) tea.Msg {
 			if err != nil {
-				return NavigateMsg{
-					Screen: ConfigEditorScreen,
-					Data: map[string]interface{}{
-						"action": "edit_nginx_site",
-						"site":   m.site,
-						"error":  fmt.Sprintf("Failed to run nano: %v", err),
-					},
+				return EditorCompleteMsg{
+					Error: fmt.Sprintf("Failed to run nano: %v", err),
 				}
 			}
-			return NavigateMsg{
-				Screen: ConfigEditorScreen,
-				Data: map[string]interface{}{
-					"action":  "edit_nginx_site",
-					"site":    m.site,
-					"success": "Config file edited with nano",
-				},
+			return EditorCompleteMsg{
+				Success: "Config file edited with nano",
 			}
 		})
 
 	case 1: // vi
 		return m, tea.ExecProcess(exec.Command("vi", m.filePath), func(err error) tea.Msg {
 			if err != nil {
-				return NavigateMsg{
-					Screen: ConfigEditorScreen,
-					Data: map[string]interface{}{
-						"action": "edit_nginx_site",
-						"site":   m.site,
-						"error":  fmt.Sprintf("Failed to run vi: %v", err),
-					},
+				return EditorCompleteMsg{
+					Error: fmt.Sprintf("Failed to run vi: %v", err),
 				}
 			}
-			return NavigateMsg{
-				Screen: ConfigEditorScreen,
-				Data: map[string]interface{}{
-					"action":  "edit_nginx_site",
-					"site":    m.site,
-					"success": "Config file edited with vi",
-				},
+			return EditorCompleteMsg{
+				Success: "Config file edited with vi",
 			}
 		})
 
 	case 2: // Cancel
 		return m, func() tea.Msg {
-			return NavigateMsg{
-				Screen: ConfigEditorScreen,
-				Data: map[string]interface{}{
-					"action": "edit_nginx_site",
-					"site":   m.site,
-				},
-			}
+			return BackMsg{}
 		}
 	}
 
 	return m, nil
+}
+
+// EditorCompleteMsg is sent when editor finishes
+type EditorCompleteMsg struct {
+	Success string
+	Error   string
 }
 
 // View renders the editor selection screen
@@ -156,8 +152,8 @@ func (m EditorSelectionModel) View() string {
 	// Header
 	header := m.theme.Title.Render("Choose Editor")
 
-	// Site info
-	siteInfo := m.theme.DescriptionStyle.Render(fmt.Sprintf("Editing: %s", m.site.Name))
+	// File info
+	siteInfo := m.theme.DescriptionStyle.Render(fmt.Sprintf("Editing: %s", m.description))
 	filePath := m.theme.DescriptionStyle.Render(fmt.Sprintf("File: %s", m.filePath))
 
 	// Instructions
