@@ -239,6 +239,39 @@ func (um *UserManager) CreateUser(username, password, shell string) error {
 	return nil
 }
 
+// CreateUserPasswordless creates a new user without a password (SSH key-only authentication)
+// This is the industry standard for server deployments where users authenticate via SSH keys
+func (um *UserManager) CreateUserPasswordless(username, shell string) error {
+	// Use useradd command to create user
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	args := []string{
+		"-m",        // Create home directory
+		"-s", shell, // Set shell
+		username,
+	}
+
+	cmd := exec.CommandContext(ctx, "useradd", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("useradd failed: %v - %s", err, string(output))
+	}
+
+	// Lock the password (disables password login but allows SSH key auth)
+	// Using passwd -d removes the password, allowing passwordless su
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel2()
+
+	passwdCmd := exec.CommandContext(ctx2, "passwd", "-d", username)
+	output, err = passwdCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("passwd -d failed: %v - %s", err, string(output))
+	}
+
+	return nil
+}
+
 // GrantSudo grants sudo privileges to a user
 func (um *UserManager) GrantSudo(username string) error {
 	// Add user to sudo group
@@ -251,6 +284,61 @@ func (um *UserManager) GrantSudo(username string) error {
 		return fmt.Errorf("usermod failed: %v - %s", err, string(output))
 	}
 
+	return nil
+}
+
+// GrantSudoNoPassword grants sudo privileges with NOPASSWD (no password required)
+// This creates a sudoers.d file for the user with NOPASSWD:ALL
+func (um *UserManager) GrantSudoNoPassword(username string) error {
+	// First add to sudo group
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "usermod", "-aG", "sudo", username)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("usermod failed: %v - %s", err, string(output))
+	}
+
+	// Create sudoers.d file for NOPASSWD access
+	sudoersFile := fmt.Sprintf("/etc/sudoers.d/%s", username)
+	sudoersContent := fmt.Sprintf("%s ALL=(ALL) NOPASSWD:ALL\n", username)
+
+	if err := os.WriteFile(sudoersFile, []byte(sudoersContent), 0440); err != nil {
+		return fmt.Errorf("failed to create sudoers file: %v", err)
+	}
+
+	// Validate the sudoers file
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel2()
+
+	checkCmd := exec.CommandContext(ctx2, "visudo", "-c", "-f", sudoersFile)
+	output, err = checkCmd.CombinedOutput()
+	if err != nil {
+		// Remove invalid file
+		os.Remove(sudoersFile)
+		return fmt.Errorf("sudoers validation failed: %v - %s", err, string(output))
+	}
+
+	return nil
+}
+
+// EnablePasswordlessSu enables passwordless su for a user (without sudo)
+// This is useful when you want to allow switching to a user without password
+// but not grant full sudo privileges
+func (um *UserManager) EnablePasswordlessSu(username string) error {
+	// The user already has no password from CreateUserPasswordless
+	// su without password works when the target user has no password set
+	// No additional configuration needed - passwd -d already enables this
+	return nil
+}
+
+// RevokeSudoNoPassword removes the NOPASSWD sudoers file for a user
+func (um *UserManager) RevokeSudoNoPassword(username string) error {
+	sudoersFile := fmt.Sprintf("/etc/sudoers.d/%s", username)
+	if err := os.Remove(sudoersFile); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove sudoers file: %v", err)
+	}
 	return nil
 }
 

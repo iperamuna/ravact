@@ -33,14 +33,15 @@ type FrankenPHPClassicModel struct {
 	currentDir string
 
 	// Form fields for site setup (huh form)
-	form         *huh.Form
-	formSiteRoot string
-	formSiteKey  string
-	formDocroot  string
-	formDomains  string
-	formPort     string
-	formUser     string
-	formGroup    string
+	form            *huh.Form
+	formSiteRoot    string
+	formSiteKey     string
+	formDocroot     string
+	formDomains     string
+	formConnType    string // "socket" or "port"
+	formPort        string
+	formUser        string
+	formGroup       string
 
 	// Composer setup options
 	composerOptions []ComposerSetupOption
@@ -147,6 +148,8 @@ func NewFrankenPHPClassicModelWithDir(currentDir string) FrankenPHPClassicModel 
 		currentDir:      currentDir,
 		formSiteRoot:    siteRoot,
 		formSiteKey:     siteKey,
+		formDocroot:     "", // Empty - user can enter relative path like "public" or leave blank
+		formConnType:    "socket",
 		formUser:        "www-data",
 		formGroup:       "www-data",
 		formPort:        "8000",
@@ -196,9 +199,9 @@ func (m *FrankenPHPClassicModel) buildSiteSetupForm() *huh.Form {
 
 			huh.NewInput().
 				Key("docroot").
-				Title("Document Root").
-				Description("Web-accessible directory (usually /public for Laravel)").
-				Placeholder("/var/www/mysite/public").
+				Title("Web Directory (relative)").
+				Description("Relative path from site root (e.g., 'public' for Laravel). Leave blank to use site root.").
+				Placeholder("public").
 				Value(&m.formDocroot),
 
 			huh.NewInput().
@@ -208,10 +211,20 @@ func (m *FrankenPHPClassicModel) buildSiteSetupForm() *huh.Form {
 				Placeholder("mysite.com www.mysite.com").
 				Value(&m.formDomains),
 
+			huh.NewSelect[string]().
+				Key("connType").
+				Title("Connection Type").
+				Description("How Nginx connects to FrankenPHP").
+				Options(
+					huh.NewOption("Unix Socket (recommended)", "socket"),
+					huh.NewOption("TCP Port", "port"),
+				).
+				Value(&m.formConnType),
+
 			huh.NewInput().
 				Key("port").
 				Title("Port").
-				Description("Port for FrankenPHP (fallback if not using Unix socket)").
+				Description("Port for FrankenPHP (used when connection type is Port)").
 				Placeholder("8000").
 				Validate(func(s string) error {
 					if s == "" {
@@ -453,11 +466,13 @@ func (m FrankenPHPClassicModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if v := m.form.GetString("siteKey"); v != "" {
 				m.formSiteKey = v
 			}
-			if v := m.form.GetString("docroot"); v != "" {
-				m.formDocroot = v
-			}
+			// Docroot can be empty (means use site root)
+			m.formDocroot = m.form.GetString("docroot")
 			if v := m.form.GetString("domains"); v != "" {
 				m.formDomains = v
+			}
+			if v := m.form.GetString("connType"); v != "" {
+				m.formConnType = v
 			}
 			if v := m.form.GetString("port"); v != "" {
 				m.formPort = v
@@ -493,14 +508,14 @@ func (m *FrankenPHPClassicModel) autoFillFields() {
 		m.formSiteKey = suggestSiteKey(m.formSiteRoot)
 	}
 
-	// Auto-fill document root
-	if m.formDocroot == "" {
-		m.formDocroot = filepath.Join(m.formSiteRoot, "public")
-	}
-
 	// Auto-fill domains
 	if m.formDomains == "" && m.formSiteKey != "" {
 		m.formDomains = m.formSiteKey + ".test"
+	}
+
+	// Default connection type
+	if m.formConnType == "" {
+		m.formConnType = "socket"
 	}
 
 	// Default port
@@ -515,6 +530,20 @@ func (m *FrankenPHPClassicModel) autoFillFields() {
 	if m.formGroup == "" {
 		m.formGroup = "www-data"
 	}
+}
+
+// getFullDocroot returns the full document root path
+func (m *FrankenPHPClassicModel) getFullDocroot() string {
+	if m.formDocroot == "" {
+		// If no docroot specified, use site root
+		return m.formSiteRoot
+	}
+	// If docroot is already absolute, use it as-is
+	if strings.HasPrefix(m.formDocroot, "/") {
+		return m.formDocroot
+	}
+	// Otherwise, join with site root
+	return filepath.Join(m.formSiteRoot, m.formDocroot)
 }
 
 // suggestSiteKey derives a site key from the site root path
@@ -718,8 +747,9 @@ func (m FrankenPHPClassicModel) buildCreateSiteCommand() string {
 	// Get values from form fields
 	siteRoot := m.formSiteRoot
 	siteKey := m.formSiteKey
-	docroot := m.formDocroot
+	docroot := m.getFullDocroot()
 	domains := m.formDomains
+	connType := m.formConnType
 	port := m.formPort
 	user := m.formUser
 	group := m.formGroup
@@ -731,11 +761,11 @@ func (m FrankenPHPClassicModel) buildCreateSiteCommand() string {
 	}
 
 	// Use defaults if empty
-	if docroot == "" {
-		docroot = siteRoot + "/public"
-	}
 	if domains == "" {
 		domains = siteKey + ".test"
+	}
+	if connType == "" {
+		connType = "socket"
 	}
 	if port == "" {
 		port = "8000"
@@ -747,6 +777,21 @@ func (m FrankenPHPClassicModel) buildCreateSiteCommand() string {
 		group = "www-data"
 	}
 
+	// Build the listen directive based on connection type
+	var listenDirective string
+	var nginxUpstream string
+	if connType == "socket" {
+		listenDirective = fmt.Sprintf("--listen unix:/run/frankenphp/%s.sock", siteKey)
+		nginxUpstream = fmt.Sprintf(`upstream frankenphp_%s {
+    server unix:/run/frankenphp/%s.sock fail_timeout=0;
+}`, siteKey, siteKey)
+	} else {
+		listenDirective = fmt.Sprintf("--listen 127.0.0.1:%s", port)
+		nginxUpstream = fmt.Sprintf(`upstream frankenphp_%s {
+    server 127.0.0.1:%s fail_timeout=0;
+}`, siteKey, port)
+	}
+
 	return fmt.Sprintf(`#!/bin/bash
 set -e
 
@@ -754,10 +799,12 @@ SITE_ROOT="%s"
 SITE_KEY="%s"
 DOCROOT="%s"
 DOMAINS="%s"
+CONN_TYPE="%s"
 PORT="%s"
 RUN_USER="%s"
 RUN_GROUP="%s"
 FRANKENPHP_BIN="%s"
+LISTEN_DIRECTIVE="%s"
 
 # Verify FrankenPHP binary exists
 if [ ! -x "$FRANKENPHP_BIN" ]; then
@@ -770,6 +817,15 @@ SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 SOCK="/run/frankenphp/${SITE_KEY}.sock"
 
 echo "Creating FrankenPHP Classic Mode site: ${SITE_KEY}"
+echo ""
+echo "  Site Root: ${SITE_ROOT}"
+echo "  Document Root: ${DOCROOT}"
+echo "  Connection: ${CONN_TYPE}"
+if [ "$CONN_TYPE" = "port" ]; then
+    echo "  Port: ${PORT}"
+else
+    echo "  Socket: ${SOCK}"
+fi
 echo ""
 
 # Create runtime directory
@@ -795,10 +851,8 @@ Environment=APP_BASE_PATH=${SITE_ROOT}
 RuntimeDirectory=frankenphp
 RuntimeDirectoryMode=0755
 
-# Listen on Unix socket (preferred) with fallback port
 ExecStart=${FRANKENPHP_BIN} php-server \\
-    --listen unix:${SOCK} \\
-    --listen 127.0.0.1:${PORT} \\
+    ${LISTEN_DIRECTIVE} \\
     --root ${DOCROOT}
 
 Restart=always
@@ -845,12 +899,7 @@ if [ -f "$NGINX_CONF" ]; then
     echo "If you want to update it, please edit manually or delete the file first."
 else
     cat > "$NGINX_CONF" <<EOF
-upstream frankenphp_${SITE_KEY} {
-    # Prefer Unix socket for better performance
-    server unix:${SOCK} fail_timeout=0;
-    # Fallback to TCP port
-    server 127.0.0.1:${PORT} backup;
-}
+%s
 
 server {
     listen 80;
@@ -978,7 +1027,7 @@ echo "  systemctl status ${SERVICE_NAME}"
 echo "  journalctl -u ${SERVICE_NAME} -f"
 echo "  fpcli -v  (PHP version via FrankenPHP)"
 echo ""
-`, siteRoot, siteKey, docroot, domains, port, user, group, binaryPath)
+`, siteRoot, siteKey, docroot, domains, connType, port, user, group, binaryPath, listenDirective, nginxUpstream)
 }
 
 // executeWithComposerSetup runs the site creation with the selected composer option

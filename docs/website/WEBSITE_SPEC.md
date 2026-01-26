@@ -248,7 +248,7 @@ Open layout (no cards), icons with descriptions:
 Large terminal mockup showing:
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Ravact v0.2.1                    ravact-server (10.0.0.5)  │
+│  Ravact v0.3.1                    ravact-server (10.0.0.5)  │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │  📦 Package Management                                      │
@@ -409,7 +409,7 @@ Link to full docs or embed key sections:
 ### Badge/Tag
 ```html
 <span class="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium bg-primary/10 text-primary">
-  v0.2.1
+  v0.3.1
 </span>
 
 <span class="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium bg-success/10 text-success">
@@ -653,7 +653,7 @@ Display the Ravact splash screen with typing effect for the ASCII logo:
 │                                                                         │
 │              Power and Control for Your Server Infrastructure           │
 │                                                                         │
-│                    Version 0.2.1 (linux/arm64)                          │
+│                    Version 0.3.1 (linux/arm64)                          │
 │                                                                         │
 │                    Created by Indunil Peramuna                          │
 │                 https://github.com/iperamuna/ravact                     │
@@ -671,7 +671,7 @@ Transition to main menu with host info displayed:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  Ravact v0.2.1                                                          │
+│  Ravact v0.3.1                                                          │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
 │  📦 Package Management                                                  │

@@ -3,7 +3,9 @@ package screens
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -28,8 +30,14 @@ type LaravelPermissionsModel struct {
 	isLaravel   bool
 	projectPath string
 	webUser     string
+	systemUser  string // from git config meta.systemuser
 	err         error
 	success     string
+	
+	// .env creation state
+	envState       string // "", "select_env", "confirm_key"
+	envType        string // "local", "staging", "production"
+	envCursor      int
 }
 
 // NewLaravelPermissionsModel creates a new Laravel permissions model
@@ -40,6 +48,15 @@ func NewLaravelPermissionsModel() LaravelPermissionsModel {
 	
 	// Detect web server user
 	webUser := detectWebUser()
+	
+	// Get system user from git config
+	systemUser := getGitSystemUser()
+
+	// Use system user if available, otherwise fall back to $USER
+	ownerUser := "$USER"
+	if systemUser != "" {
+		ownerUser = systemUser
+	}
 
 	actions := []LaravelPermAction{
 		{
@@ -52,13 +69,13 @@ func NewLaravelPermissionsModel() LaravelPermissionsModel {
 			ID:          "storage_writable",
 			Name:        "Make Storage Writable",
 			Description: "Set storage & bootstrap/cache writable by web server",
-			Command:     fmt.Sprintf("chmod -R 775 storage bootstrap/cache && chown -R $USER:%s storage bootstrap/cache", webUser),
+			Command:     fmt.Sprintf("chmod -R 775 storage bootstrap/cache && chown -R %s:%s storage bootstrap/cache", ownerUser, webUser),
 		},
 		{
 			ID:          "full_reset",
 			Name:        "Full Permission Reset",
 			Description: "Reset all permissions and set proper ownership",
-			Command:     fmt.Sprintf("find . -type d -exec chmod 755 {} \\; && find . -type f -exec chmod 644 {} \\; && chmod -R 775 storage bootstrap/cache && chown -R $USER:%s .", webUser),
+			Command:     fmt.Sprintf("find . -type d -exec chmod 755 {} \\; && find . -type f -exec chmod 644 {} \\; && chmod -R 775 storage bootstrap/cache && chown -R %s:%s .", ownerUser, webUser),
 		},
 		{
 			ID:          "storage_777",
@@ -97,6 +114,42 @@ func NewLaravelPermissionsModel() LaravelPermissionsModel {
 			Command:     "echo '=== Storage ===' && ls -la storage/ && echo '' && echo '=== Bootstrap/Cache ===' && ls -la bootstrap/cache/ && echo '' && echo '=== .env ===' && ls -la .env 2>/dev/null || echo '.env not found'",
 		},
 		{
+			ID:          "create_env",
+			Name:        "Create .env from .env.example",
+			Description: "Copy .env.example to .env and optionally generate APP_KEY",
+			Command:     "", // Special handling
+		},
+		{
+			ID:          "artisan_migrate",
+			Name:        "Artisan Migrate",
+			Description: "Run php artisan migrate",
+			Command:     "php artisan migrate",
+		},
+		{
+			ID:          "artisan_cache_clear",
+			Name:        "Artisan Clear All Caches",
+			Description: "Clear config, route, view, and application cache",
+			Command:     "php artisan config:clear && php artisan route:clear && php artisan view:clear && php artisan cache:clear && echo '✓ All caches cleared'",
+		},
+		{
+			ID:          "artisan_optimize",
+			Name:        "Artisan Optimize",
+			Description: "Run php artisan optimize for production",
+			Command:     "php artisan optimize",
+		},
+		{
+			ID:          "artisan_key_generate",
+			Name:        "Artisan Key Generate",
+			Description: "Generate new APP_KEY",
+			Command:     "php artisan key:generate",
+		},
+		{
+			ID:          "setup_scheduler",
+			Name:        "Setup Laravel Scheduler",
+			Description: "Add scheduler cron job for www-data user",
+			Command:     "", // Special handling
+		},
+		{
 			ID:          "back",
 			Name:        "← Back to Site Commands",
 			Description: "Return to site commands menu",
@@ -111,7 +164,18 @@ func NewLaravelPermissionsModel() LaravelPermissionsModel {
 		isLaravel:   isLaravel,
 		projectPath: cwd,
 		webUser:     webUser,
+		systemUser:  systemUser,
 	}
+}
+
+// getGitSystemUser retrieves the meta.systemuser from git config
+func getGitSystemUser() string {
+	cmd := exec.Command("git", "config", "--get", "meta.systemuser")
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(output))
 }
 
 // isLaravelProject checks if the directory contains a Laravel project
@@ -158,6 +222,14 @@ func (m LaravelPermissionsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// Handle env selection state
+		if m.envState == "select_env" {
+			return m.updateEnvSelection(msg)
+		}
+		if m.envState == "confirm_key" {
+			return m.updateKeyConfirm(msg)
+		}
+
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
@@ -185,6 +257,128 @@ func (m LaravelPermissionsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// updateEnvSelection handles environment type selection
+func (m LaravelPermissionsModel) updateEnvSelection(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	envOptions := []string{"local", "staging", "production"}
+	
+	switch msg.String() {
+	case "ctrl+c", "q":
+		return m, tea.Quit
+	case "esc", "backspace":
+		m.envState = ""
+		return m, nil
+	case "up", "k":
+		if m.envCursor > 0 {
+			m.envCursor--
+		}
+	case "down", "j":
+		if m.envCursor < len(envOptions)-1 {
+			m.envCursor++
+		}
+	case "enter", " ":
+		m.envType = envOptions[m.envCursor]
+		m.envState = "confirm_key"
+		m.envCursor = 0
+		return m, nil
+	}
+	return m, nil
+}
+
+// updateKeyConfirm handles key generation confirmation
+func (m LaravelPermissionsModel) updateKeyConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c", "q":
+		return m, tea.Quit
+	case "esc", "backspace":
+		m.envState = "select_env"
+		return m, nil
+	case "up", "k":
+		if m.envCursor > 0 {
+			m.envCursor--
+		}
+	case "down", "j":
+		if m.envCursor < 1 {
+			m.envCursor++
+		}
+	case "enter", " ":
+		return m.executeEnvCreation()
+	}
+	return m, nil
+}
+
+// executeEnvCreation creates the .env file
+func (m LaravelPermissionsModel) executeEnvCreation() (tea.Model, tea.Cmd) {
+	generateKey := m.envCursor == 0 // Yes is first option
+	
+	var command string
+	if generateKey {
+		command = fmt.Sprintf(`cp .env.example .env && sed -i 's/APP_ENV=.*/APP_ENV=%s/' .env && echo '✓ Created .env with APP_ENV=%s' && php artisan key:generate`, m.envType, m.envType)
+	} else {
+		command = fmt.Sprintf(`cp .env.example .env && sed -i 's/APP_ENV=.*/APP_ENV=%s/' .env && echo '✓ Created .env with APP_ENV=%s'`, m.envType, m.envType)
+	}
+	
+	m.envState = ""
+	
+	return m, func() tea.Msg {
+		return ExecutionStartMsg{
+			Command:     command,
+			Description: fmt.Sprintf("Creating .env (%s)", m.envType),
+		}
+	}
+}
+
+// setupScheduler adds the Laravel scheduler cron job to www-data's crontab
+func (m LaravelPermissionsModel) setupScheduler() (tea.Model, tea.Cmd) {
+	projectPath := m.projectPath
+	
+	// Command to:
+	// 1. Check if cron entry already exists
+	// 2. If not, add it to www-data's crontab
+	command := fmt.Sprintf(`#!/bin/bash
+set -e
+
+PROJECT_PATH="%s"
+CRON_ENTRY="* * * * * cd ${PROJECT_PATH} && php artisan schedule:run >> /dev/null 2>&1"
+CRON_USER="www-data"
+
+echo "Setting up Laravel Scheduler for: ${PROJECT_PATH}"
+echo "Cron user: ${CRON_USER}"
+echo ""
+
+# Check if the cron entry already exists
+EXISTING=$(crontab -u ${CRON_USER} -l 2>/dev/null | grep -F "${PROJECT_PATH}" | grep -F "schedule:run" || true)
+
+if [ -n "$EXISTING" ]; then
+    echo "⚠ Scheduler cron job already exists for this project:"
+    echo "  $EXISTING"
+    echo ""
+    echo "No changes made."
+else
+    # Add the cron entry to www-data's crontab
+    (crontab -u ${CRON_USER} -l 2>/dev/null || true; echo "${CRON_ENTRY}") | crontab -u ${CRON_USER} -
+    
+    echo "✓ Laravel scheduler cron job added successfully!"
+    echo ""
+    echo "Cron entry:"
+    echo "  ${CRON_ENTRY}"
+    echo ""
+    echo "Current www-data crontab:"
+    crontab -u ${CRON_USER} -l 2>/dev/null || echo "  (empty)"
+fi
+
+echo ""
+echo "To verify scheduler is working, run:"
+echo "  php artisan schedule:list"
+`, projectPath)
+
+	return m, func() tea.Msg {
+		return ExecutionStartMsg{
+			Command:     command,
+			Description: "Setup Laravel Scheduler (www-data crontab)",
+		}
+	}
+}
+
 // executeAction executes the selected permission action
 func (m LaravelPermissionsModel) executeAction() (LaravelPermissionsModel, tea.Cmd) {
 	m.err = nil
@@ -196,6 +390,34 @@ func (m LaravelPermissionsModel) executeAction() (LaravelPermissionsModel, tea.C
 		return m, func() tea.Msg {
 			return NavigateMsg{Screen: SiteCommandsScreen}
 		}
+	}
+
+	// Handle .env creation specially
+	if action.ID == "create_env" {
+		// Check if .env.example exists
+		if _, err := os.Stat(filepath.Join(m.projectPath, ".env.example")); os.IsNotExist(err) {
+			m.err = fmt.Errorf(".env.example not found in this directory")
+			return m, nil
+		}
+		// Check if .env already exists
+		if _, err := os.Stat(filepath.Join(m.projectPath, ".env")); err == nil {
+			m.err = fmt.Errorf(".env already exists. Delete it first if you want to recreate it")
+			return m, nil
+		}
+		m.envState = "select_env"
+		m.envCursor = 0
+		return m, nil
+	}
+
+	// Handle scheduler setup
+	if action.ID == "setup_scheduler" {
+		// Check if artisan exists (Laravel project)
+		if _, err := os.Stat(filepath.Join(m.projectPath, "artisan")); os.IsNotExist(err) {
+			m.err = fmt.Errorf("artisan not found - not a Laravel project")
+			return m, nil
+		}
+		model, cmd := m.setupScheduler()
+		return model.(LaravelPermissionsModel), cmd
 	}
 
 	if action.Command == "" {
@@ -216,8 +438,16 @@ func (m LaravelPermissionsModel) View() string {
 		return "Loading..."
 	}
 
+	// Handle env selection states
+	if m.envState == "select_env" {
+		return m.viewEnvSelection()
+	}
+	if m.envState == "confirm_key" {
+		return m.viewKeyConfirm()
+	}
+
 	// Header
-	header := m.theme.Title.Render("Laravel Permissions")
+	header := m.theme.Title.Render("Laravel App")
 
 	// Project info
 	var infoLines []string
@@ -233,6 +463,11 @@ func (m LaravelPermissionsModel) View() string {
 	
 	infoLines = append(infoLines, "")
 	infoLines = append(infoLines, m.theme.Label.Render("Web User: ")+m.theme.InfoStyle.Render(m.webUser))
+	if m.systemUser != "" {
+		infoLines = append(infoLines, m.theme.Label.Render("Owner User: ")+m.theme.SuccessStyle.Render(m.systemUser)+" (from git config)")
+	} else {
+		infoLines = append(infoLines, m.theme.Label.Render("Owner User: ")+m.theme.WarningStyle.Render("$USER")+" (set via Git → Set System User)")
+	}
 	infoLines = append(infoLines, m.theme.Label.Render("Path: ")+m.theme.DescriptionStyle.Render(m.projectPath))
 
 	infoSection := lipgloss.JoinVertical(lipgloss.Left, infoLines...)
@@ -318,4 +553,83 @@ func (m LaravelPermissionsModel) View() string {
 		lipgloss.Center,
 		bordered,
 	)
+}
+
+// viewEnvSelection renders the environment selection screen
+func (m LaravelPermissionsModel) viewEnvSelection() string {
+	header := m.theme.Title.Render("Create .env - Select Environment")
+
+	description := m.theme.DescriptionStyle.Render("Select the environment type for your .env file:")
+
+	envOptions := []string{"local", "staging", "production"}
+	envDescriptions := []string{
+		"Development environment with debug enabled",
+		"Staging/testing environment",
+		"Production environment with optimizations",
+	}
+
+	var items []string
+	items = append(items, "")
+	for i, opt := range envOptions {
+		cursor := "  "
+		if i == m.envCursor {
+			cursor = m.theme.KeyStyle.Render("▶ ")
+		}
+
+		var renderedItem string
+		if i == m.envCursor {
+			renderedItem = m.theme.SelectedItem.Render(fmt.Sprintf("%s%s", cursor, opt))
+			items = append(items, renderedItem)
+			items = append(items, "    "+m.theme.DescriptionStyle.Render(envDescriptions[i]))
+		} else {
+			renderedItem = m.theme.MenuItem.Render(fmt.Sprintf("%s%s", cursor, opt))
+			items = append(items, renderedItem)
+		}
+	}
+
+	menu := lipgloss.JoinVertical(lipgloss.Left, items...)
+
+	help := m.theme.Help.Render("↑/↓: Navigate • Enter: Select • Esc: Cancel")
+
+	content := lipgloss.JoinVertical(lipgloss.Left, header, "", description, menu, "", help)
+	bordered := m.theme.BorderStyle.Render(content)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
+}
+
+// viewKeyConfirm renders the key generation confirmation screen
+func (m LaravelPermissionsModel) viewKeyConfirm() string {
+	header := m.theme.Title.Render("Create .env - Generate APP_KEY?")
+
+	info := lipgloss.JoinVertical(lipgloss.Left,
+		m.theme.Label.Render("Environment: ")+m.theme.InfoStyle.Render(m.envType),
+		"",
+		m.theme.DescriptionStyle.Render("Do you want to generate a new APP_KEY after creating .env?"),
+	)
+
+	options := []string{"Yes, generate new APP_KEY", "No, I'll set it manually"}
+
+	var items []string
+	items = append(items, "")
+	for i, opt := range options {
+		cursor := "  "
+		if i == m.envCursor {
+			cursor = m.theme.KeyStyle.Render("▶ ")
+		}
+
+		var renderedItem string
+		if i == m.envCursor {
+			renderedItem = m.theme.SelectedItem.Render(fmt.Sprintf("%s%s", cursor, opt))
+		} else {
+			renderedItem = m.theme.MenuItem.Render(fmt.Sprintf("%s%s", cursor, opt))
+		}
+		items = append(items, renderedItem)
+	}
+
+	menu := lipgloss.JoinVertical(lipgloss.Left, items...)
+
+	help := m.theme.Help.Render("↑/↓: Navigate • Enter: Confirm • Esc: Back")
+
+	content := lipgloss.JoinVertical(lipgloss.Left, header, "", info, menu, "", help)
+	bordered := m.theme.BorderStyle.Render(content)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
 }

@@ -41,3 +41,6 @@ build/
 # Temporary files
 tmp_*
 cmd/ravact/assets/
+
+# Obsidian
+docs/.obsidian/

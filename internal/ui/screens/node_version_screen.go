@@ -27,6 +27,7 @@ type NodeVersionModel struct {
 	commandType    string // "npm_install" or "npm_build"
 	currentVersion string
 	nvmInstalled   bool
+	systemUser     string // from git config meta.systemuser
 }
 
 // NewNodeVersionModel creates a new node version selection model
@@ -43,6 +44,9 @@ func NewNodeVersionModel(commandType string) NodeVersionModel {
 	// Detect current Node version
 	currentVersion := detectNodeVersion()
 	nvmInstalled := isNvmInstalled()
+	
+	// Get system user from git config
+	systemUser := getNodeSystemUser()
 
 	return NodeVersionModel{
 		theme:          theme.DefaultTheme(),
@@ -51,7 +55,18 @@ func NewNodeVersionModel(commandType string) NodeVersionModel {
 		commandType:    commandType,
 		currentVersion: currentVersion,
 		nvmInstalled:   nvmInstalled,
+		systemUser:     systemUser,
 	}
+}
+
+// getNodeSystemUser retrieves the meta.systemuser from git config
+func getNodeSystemUser() string {
+	cmd := exec.Command("git", "config", "--get", "meta.systemuser")
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(output))
 }
 
 // detectNodeVersion gets the current Node.js version
@@ -125,21 +140,33 @@ func (m NodeVersionModel) executeCommand() (NodeVersionModel, tea.Cmd) {
 
 	npmCmd := "npm install"
 	if m.commandType == "npm_build" {
-		npmCmd = "npm run build"
+		npmCmd = "npm install && npm run build"
 	}
 
+	// Build the base command
+	var baseCmd string
 	if selectedVersion.Version == "current" {
 		// Use current version directly
-		command = npmCmd
+		baseCmd = npmCmd
 		description = fmt.Sprintf("Running %s (Node %s)", npmCmd, m.currentVersion)
 	} else if m.nvmInstalled {
 		// Use nvm to switch version
-		command = fmt.Sprintf("source $HOME/.nvm/nvm.sh && nvm use %s && %s", selectedVersion.Version, npmCmd)
+		baseCmd = fmt.Sprintf("source $HOME/.nvm/nvm.sh && nvm use %s && %s", selectedVersion.Version, npmCmd)
 		description = fmt.Sprintf("Running %s with Node.js %s", npmCmd, selectedVersion.Version)
 	} else {
 		// No nvm, but user selected a specific version - warn them
-		command = fmt.Sprintf("echo 'Node.js %s selected but nvm is not installed.' && echo 'Install nvm first: curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash' && echo '' && echo 'Running with current version instead...' && %s", selectedVersion.Version, npmCmd)
+		baseCmd = fmt.Sprintf("echo 'Node.js %s selected but nvm is not installed.' && echo 'Install nvm first: curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash' && echo '' && echo 'Running with current version instead...' && %s", selectedVersion.Version, npmCmd)
 		description = fmt.Sprintf("Running %s (nvm not installed, using current)", npmCmd)
+	}
+
+	// If system user is configured, run as that user
+	if m.systemUser != "" {
+		cwd, _ := exec.Command("pwd").Output()
+		cwdStr := strings.TrimSpace(string(cwd))
+		command = fmt.Sprintf(`su - %s -c 'cd "%s" && %s'`, m.systemUser, cwdStr, baseCmd)
+		description = fmt.Sprintf("%s (as %s)", description, m.systemUser)
+	} else {
+		command = baseCmd
 	}
 
 	return m, func() tea.Msg {
@@ -171,6 +198,11 @@ func (m NodeVersionModel) View() string {
 		statusLines = append(statusLines, m.theme.SuccessStyle.Render("✓ nvm detected - version switching available"))
 	} else {
 		statusLines = append(statusLines, m.theme.WarningStyle.Render("⚠ nvm not installed - using current version only"))
+	}
+	
+	// Show system user if configured
+	if m.systemUser != "" {
+		statusLines = append(statusLines, m.theme.Label.Render("Run as: ")+m.theme.SuccessStyle.Render(m.systemUser)+" (from git config)")
 	}
 	
 	statusSection := lipgloss.JoinVertical(lipgloss.Left, statusLines...)

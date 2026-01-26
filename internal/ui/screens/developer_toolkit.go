@@ -2,6 +2,7 @@ package screens
 
 import (
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -45,6 +46,7 @@ type DeveloperToolkitModel struct {
 	copiedCommand   string
 	scrollOffset    int
 	maxVisibleItems int
+	systemUser      string // from git config meta.systemuser
 }
 
 // NewDeveloperToolkitModel creates a new developer toolkit model
@@ -299,16 +301,30 @@ func NewDeveloperToolkitModel() DeveloperToolkitModel {
 		},
 	}
 
+	// Get system user from git config
+	systemUser := getToolkitSystemUser()
+
 	m := DeveloperToolkitModel{
 		theme:           t,
 		commands:        commands,
 		category:        LaravelCategory,
 		cursor:          0,
 		maxVisibleItems: 10,
+		systemUser:      systemUser,
 	}
 
 	m.filterByCategory()
 	return m
+}
+
+// getToolkitSystemUser retrieves the meta.systemuser from git config
+func getToolkitSystemUser() string {
+	cmd := exec.Command("git", "config", "--get", "meta.systemuser")
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(output))
 }
 
 // filterByCategory filters commands by the current category
@@ -418,11 +434,13 @@ func (m DeveloperToolkitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Execute command (navigate to execution screen)
 			if len(m.filteredCmds) > 0 && m.cursor < len(m.filteredCmds) {
 				cmd := m.filteredCmds[m.cursor]
+				// Pass system user for commands that need it
 				return m, func() tea.Msg {
 					return ExecuteToolkitCommandMsg{
 						Command:     cmd.Command,
 						Description: cmd.Name + ": " + cmd.Description,
 						NeedsPath:   cmd.NeedsPath,
+						SystemUser:  m.systemUser,
 					}
 				}
 			}
@@ -581,4 +599,5 @@ type ExecuteToolkitCommandMsg struct {
 	Command     string
 	Description string
 	NeedsPath   bool
+	SystemUser  string // from git config meta.systemuser
 }

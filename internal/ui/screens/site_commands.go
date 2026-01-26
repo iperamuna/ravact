@@ -49,10 +49,10 @@ func NewSiteCommandsModel() SiteCommandsModel {
 			Screen:      ExecutionScreen,
 		},
 		{
-			ID:          "laravel",
-			Name:        "Laravel Permissions",
-			Description: "Set proper file permissions for Laravel projects",
-			Screen:      LaravelPermissionsScreen,
+			ID:          "laravel_app",
+			Name:        "Laravel App",
+			Description: "Laravel permissions, artisan commands, .env setup",
+			Screen:      LaravelPermissionsScreen, // Will navigate to Laravel menu
 		},
 		{
 			ID:          "npm_install",
@@ -63,7 +63,7 @@ func NewSiteCommandsModel() SiteCommandsModel {
 		{
 			ID:          "npm_build",
 			Name:        "NPM Build",
-			Description: "Run npm run build (production build)",
+			Description: "Run npm install & npm run build (production)",
 			Screen:      ExecutionScreen,
 		},
 		{
@@ -76,24 +76,6 @@ func NewSiteCommandsModel() SiteCommandsModel {
 			ID:          "composer_install_fpcli",
 			Name:        "Composer Install (FrankenPHP)",
 			Description: "Run composer install using fpcli (FrankenPHP)",
-			Screen:      ExecutionScreen,
-		},
-		{
-			ID:          "artisan_migrate",
-			Name:        "Artisan Migrate",
-			Description: "Run php artisan migrate",
-			Screen:      ExecutionScreen,
-		},
-		{
-			ID:          "artisan_cache_clear",
-			Name:        "Artisan Clear All Caches",
-			Description: "Clear config, route, view, and application cache",
-			Screen:      ExecutionScreen,
-		},
-		{
-			ID:          "artisan_optimize",
-			Name:        "Artisan Optimize",
-			Description: "Run php artisan optimize for production",
 			Screen:      ExecutionScreen,
 		},
 	}
@@ -205,7 +187,7 @@ echo "Note: System PHP (if installed) is still available at /usr/bin/php"
 			}
 		}
 
-	case "laravel":
+	case "laravel_app":
 		return m, func() tea.Msg {
 			return NavigateMsg{Screen: LaravelPermissionsScreen}
 		}
@@ -293,29 +275,6 @@ echo "✓ Composer install completed!"
 			}
 		}
 
-	case "artisan_migrate":
-		return m, func() tea.Msg {
-			return NavigateMsg{
-				Screen: PHPVersionScreen,
-				Data:   map[string]interface{}{"commandType": "artisan_migrate"},
-			}
-		}
-
-	case "artisan_cache_clear":
-		return m, func() tea.Msg {
-			return NavigateMsg{
-				Screen: PHPVersionScreen,
-				Data:   map[string]interface{}{"commandType": "artisan_cache_clear"},
-			}
-		}
-
-	case "artisan_optimize":
-		return m, func() tea.Msg {
-			return NavigateMsg{
-				Screen: PHPVersionScreen,
-				Data:   map[string]interface{}{"commandType": "artisan_optimize"},
-			}
-		}
 	}
 
 	return m, nil

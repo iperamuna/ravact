@@ -41,7 +41,9 @@ func NewInstalledAppsModel(scriptsDir string) InstalledAppsModel {
 	
 	// Scripts to skip from display
 	skipScripts := map[string]bool{
-		"php-simple": true, // Removed in favor of unified PHP management
+		"php-simple":  true, // Removed in favor of unified PHP management
+		"frankenphp":  true, // Available via Site Commands → FrankenPHP Classic Mode
+		"nodejs":      true, // Node.js managed via npm commands in Site Commands
 	}
 
 	if EmbeddedFS != (embed.FS{}) {
@@ -95,14 +97,6 @@ func NewInstalledAppsModel(scriptsDir string) InstalledAppsModel {
 			scripts[i].Name = "PHP"
 			scripts[i].Description = "PHP versions and extensions management"
 			scripts[i].ServiceID = "php-fpm"
-		case "frankenphp":
-			scripts[i].Name = "FrankenPHP"
-			scripts[i].Description = "Modern PHP server with Caddy (Classic/Worker/Mercure modes)"
-			scripts[i].ServiceID = "frankenphp"
-		case "nodejs":
-			scripts[i].Name = "Node.js"
-			scripts[i].Description = "JavaScript runtime with npm, yarn, and PM2"
-			scripts[i].ServiceID = "node"
 		case "supervisor":
 			scripts[i].Name = "Supervisor"
 			scripts[i].Description = "Process control system for Unix-like systems"

@@ -39,7 +39,9 @@ func NewSetupMenuModel(scriptsDir string) SetupMenuModel {
 	
 	// Scripts to skip from display
 	skipScripts := map[string]bool{
-		"php-simple": true, // Removed in favor of unified PHP management
+		"php-simple":  true, // Removed in favor of unified PHP management
+		"frankenphp":  true, // Available via Site Commands → FrankenPHP Classic Mode
+		"nodejs":      true, // Available via Site Commands → NPM operations
 	}
 
 	if EmbeddedFS != (embed.FS{}) {

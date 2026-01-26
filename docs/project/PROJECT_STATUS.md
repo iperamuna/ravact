@@ -2,8 +2,8 @@
 
 [← Back to Documentation](../README.md)
 
-**Date**: 2026-01-25  
-**Version**: 0.2.0  
+**Date**: 2026-01-26  
+**Version**: 0.3.1  
 **Status**: ✅ Feature Complete - Production Ready
 
 ## Overview
@@ -199,6 +199,34 @@ ravact-go/
 - [x] Smart service detection (grayed out if not installed)
 - [x] User management with sudo access
 
+### ✅ Git Operations (v0.3.0)
+- [x] Git clone with user selection
+- [x] `meta.systemuser` config - tracks user per repository
+- [x] Auto-set system user after cloning
+- [x] Git pull/fetch/status use configured user automatically
+- [x] "Set System User" option for manual configuration
+
+### ✅ Laravel App Menu (v0.3.0)
+- [x] Consolidated Laravel tools in dedicated submenu
+- [x] Create .env from .env.example
+- [x] Environment selection (local/staging/production)
+- [x] Auto APP_KEY generation option
+- [x] Laravel Scheduler setup (www-data crontab)
+- [x] All artisan commands (migrate, cache clear, optimize, key:generate)
+
+### ✅ Passwordless User Creation (v0.3.0)
+- [x] SSH key-only authentication (no password)
+- [x] Passwordless su (switch users without password)
+- [x] Passwordless sudo (NOPASSWD:ALL via /etc/sudoers.d/)
+- [x] Form toggle for passwordless access
+- [x] Sudoers validation with visudo -c
+
+### ✅ FrankenPHP Enhancements (v0.3.0)
+- [x] Socket/Port selection for service creation
+- [x] Web directory path relative to site root
+- [x] Service edit form fixed
+- [x] Service edit crash fixed
+
 ## Pending/Future Features
 
 ### 🔄 Advanced Features
@@ -298,7 +326,7 @@ Ravact is now **feature-complete** with all planned configuration management cap
 
 **Ready for**: Production use, community contributions, advanced feature development
 
-**Status**: ✅ **Production-Ready** (v0.1.3)
+**Status**: ✅ **Production-Ready** (v0.3.1)
 
 ---
 

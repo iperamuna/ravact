@@ -111,4 +111,4 @@ Main Menu
 
 ---
 
-**Version**: 0.2.2 | **Last Updated**: January 2026
+**Version**: 0.3.1 | **Last Updated**: January 2026

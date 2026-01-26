@@ -4,7 +4,7 @@
 
 **Ravact** is a Linux server management TUI (Terminal User Interface) tool built in Go. It provides a modern, keyboard-driven interface for managing web servers, databases, and system services - primarily targeting Ubuntu/Debian systems.
 
-**Current Version:** 0.2.1 (Feature Complete)
+**Current Version:** 0.3.1
 **Go Version:** 1.24.0
 **Target Platform:** Linux (Ubuntu/Debian primarily, with CentOS/RHEL/Fedora support)
 
@@ -88,12 +88,21 @@ Key screens: `MainMenuScreen`, `SetupMenuScreen`, `ConfigMenuScreen`, `UserManag
 
 ### Core Functionality
 
-1. **Package Management** - Install Nginx, MySQL, PostgreSQL, Redis, PHP, Node.js, FrankenPHP, Supervisor
+1. **Package Management** - Install Nginx, MySQL, PostgreSQL, Redis, PHP, Supervisor
 2. **Service Configuration** - Configure all installed services via TUI
-3. **Site Management** - Nginx site management, SSL certificates, Laravel/WordPress tools
-4. **User Management** - System users, groups, sudo privileges
-5. **Developer Toolkit** - 34+ essential commands for Laravel/WordPress/PHP/Security
-6. **File Browser** - Full vim-style file manager with preview, search, multi-select
+3. **Site Management** - Nginx site management, SSL certificates, FrankenPHP Classic Mode
+4. **Laravel App** - Laravel permissions, .env setup, artisan commands, scheduler setup
+5. **Git Operations** - Clone repos, manage remotes, system user tracking per repo
+6. **User Management** - Passwordless users, SSH key-only auth, NOPASSWD sudo
+7. **Developer Toolkit** - 34+ essential commands for Laravel/WordPress/PHP/Security
+8. **File Browser** - Full vim-style file manager with preview, search, multi-select
+
+### Recent Additions (v0.3.0)
+
+- **Git System User (`meta.systemuser`)** - Tracks which user to use for git operations per repository
+- **Laravel App Menu** - Consolidated Laravel tools with .env creation and scheduler setup
+- **Passwordless User Creation** - SSH key-only authentication with NOPASSWD sudo option
+- **FrankenPHP Socket/Port Selection** - Choose between Unix socket or TCP port for services
 
 ### Keyboard Conventions
 

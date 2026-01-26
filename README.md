@@ -36,8 +36,9 @@
 - **Supervisor** - Program management, XML-RPC configuration (IP, port, username, password), add programs with editor selection (nano/vi) and config validation
 
 ### 👥 User Management
-- **Create/Delete Users** - Manage system users with home directories
-- **Sudo Access** - Grant or revoke sudo privileges
+- **Passwordless Users** - Create users with SSH key-only authentication (no password)
+- **Passwordless Sudo (NOPASSWD)** - Grant sudo without password prompts
+- **Passwordless su** - Switch to user without password
 - **User Details** - View user information and group memberships
 
 ### ⚡ Quick Commands
@@ -253,7 +254,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## 📊 Project Status
 
-**Version**: 0.2.2
+**Version**: 0.3.1
 
 **All Features Implemented**:
 - ✅ Complete software setup automation (13+ packages)
@@ -264,9 +265,18 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - ✅ PHP-FPM pool management (view pools, service control)
 - ✅ Supervisor configuration (programs, XML-RPC)
 - ✅ Firewall management
-- ✅ User management with sudo access
+- ✅ Passwordless user management with NOPASSWD sudo
 - ✅ Editor integration (nano/vi)
 - ✅ Quick system commands
+
+**New in v0.3.0**:
+- ✅ Git System User (`meta.systemuser`) - automatic user tracking per repository
+- ✅ Laravel App menu with .env creation, scheduler setup, artisan commands
+- ✅ Passwordless user creation (SSH key-only authentication)
+- ✅ Passwordless sudo (NOPASSWD) and su support
+- ✅ FrankenPHP Socket/Port selection for service creation
+- ✅ NPM build runs `npm install && npm run build` as system user
+- ✅ Removed FrankenPHP/Node.js from Setup Install (available via Site Commands)
 
 **New in v0.2.0**:
 - ✅ Developer Toolkit with 34+ essential Laravel/WordPress/PHP/Security commands

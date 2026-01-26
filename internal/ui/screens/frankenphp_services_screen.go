@@ -229,6 +229,12 @@ func (m FrankenPHPServicesModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if f, ok := form.(*huh.Form); ok {
 			m.editForm = f
 		}
+
+		// Check if form is completed after update
+		if m.editForm.State == huh.StateCompleted {
+			return m.saveServiceConfig()
+		}
+
 		return m, cmd
 	}
 
@@ -287,21 +293,22 @@ func (m FrankenPHPServicesModel) updateActions(msg tea.KeyMsg) (tea.Model, tea.C
 
 // updateEdit handles edit form
 func (m FrankenPHPServicesModel) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.editForm != nil {
-		if m.editForm.State == huh.StateCompleted {
-			// Save changes
-			return m.saveServiceConfig()
-		}
-
-		switch msg.String() {
-		case "ctrl+c":
-			return m, tea.Quit
-		case "esc":
-			m.state = FPServicesStateActions
-			m.editForm = nil
-			return m, nil
-		}
+	if m.editForm == nil {
+		// Form not initialized, go back to actions
+		m.state = FPServicesStateActions
+		return m, nil
 	}
+
+	// Handle escape before form update
+	switch msg.String() {
+	case "ctrl+c":
+		return m, tea.Quit
+	case "esc":
+		m.state = FPServicesStateActions
+		m.editForm = nil
+		return m, nil
+	}
+
 	return m, nil
 }
 
@@ -493,6 +500,9 @@ func (m *FrankenPHPServicesModel) buildEditForm() *huh.Form {
 // saveServiceConfig saves the edited service configuration
 func (m FrankenPHPServicesModel) saveServiceConfig() (tea.Model, tea.Cmd) {
 	if len(m.services) == 0 || m.cursor >= len(m.services) {
+		m.state = FPServicesStateList
+		m.editForm = nil
+		m.err = fmt.Errorf("no service selected")
 		return m, nil
 	}
 
@@ -502,6 +512,12 @@ func (m FrankenPHPServicesModel) saveServiceConfig() (tea.Model, tea.Cmd) {
 	if m.editForm != nil {
 		if v := m.editForm.GetString("siteRoot"); v != "" {
 			m.editSiteRoot = v
+		}
+		if v := m.editForm.GetString("docroot"); v != "" {
+			m.editDocroot = v
+		}
+		if v := m.editForm.GetString("domains"); v != "" {
+			m.editDomains = v
 		}
 		if v := m.editForm.GetString("port"); v != "" {
 			m.editPort = v

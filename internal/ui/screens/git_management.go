@@ -7,8 +7,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/charmbracelet/huh"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/iperamuna/ravact/internal/system"
 	"github.com/iperamuna/ravact/internal/ui/theme"
@@ -25,19 +25,21 @@ const (
 	GitStateAddRemoteForm
 	GitStateConfirmRemote
 	GitStateGitOpForm
+	GitStateSetSystemUserForm
 )
 
 // GitInfo holds information about the current git repository
 type GitInfo struct {
-	IsRepo       bool
-	RemoteURL    string
-	RemoteName   string
-	Branch       string
-	LastCommit   string
-	CommitMsg    string
-	HasChanges   bool
-	Ahead        int
-	Behind       int
+	IsRepo     bool
+	RemoteURL  string
+	RemoteName string
+	Branch     string
+	LastCommit string
+	CommitMsg  string
+	HasChanges bool
+	Ahead      int
+	Behind     int
+	SystemUser string // meta.systemuser config value
 }
 
 // GitAction represents a git action menu item
@@ -49,48 +51,52 @@ type GitAction struct {
 
 // GitManagementModel represents the git management screen
 type GitManagementModel struct {
-	theme       *theme.Theme
-	width       int
-	height      int
-	cursor      int
-	actions     []GitAction
-	gitInfo     GitInfo
-	err         error
-	success     string
-	
+	theme   *theme.Theme
+	width   int
+	height  int
+	cursor  int
+	actions []GitAction
+	gitInfo GitInfo
+	err     error
+	success string
+
 	// State management
-	state       GitState
-	currentDir  string
-	
+	state      GitState
+	currentDir string
+
 	// Form for test connection
-	testForm        *huh.Form
-	selectedUser    string
-	selectedKey     string
-	
+	testForm     *huh.Form
+	selectedUser string
+	selectedKey  string
+
 	// Form for add remote
-	remoteForm      *huh.Form
-	remoteUser      string
-	remoteURL       string
-	
+	remoteForm *huh.Form
+	remoteUser string
+	remoteURL  string
+
 	// Form for clone
-	cloneForm       *huh.Form
-	cloneUser       string
-	cloneURL        string
-	
+	cloneForm *huh.Form
+	cloneUser string
+	cloneURL  string
+
 	// Form for git operations (pull, fetch, status, etc.)
-	gitOpForm       *huh.Form
-	gitOpUser       string
-	gitOpAction     string
-	
+	gitOpForm   *huh.Form
+	gitOpUser   string
+	gitOpAction string
+
+	// Form for setting system user
+	systemUserForm *huh.Form
+	systemUser     string
+
 	// User manager
-	userManager     *system.UserManager
-	availableUsers  []string
+	userManager    *system.UserManager
+	availableUsers []string
 }
 
 // NewGitManagementModel creates a new git management model
 func NewGitManagementModel() GitManagementModel {
 	gitInfo := getGitInfo()
-	
+
 	// Get current directory
 	currentDir, _ := os.Getwd()
 
@@ -104,9 +110,10 @@ func NewGitManagementModel() GitManagementModel {
 		{ID: "git_pull", Name: "Git Pull", Description: "Pull latest changes from remote"},
 		{ID: "git_fetch", Name: "Git Fetch", Description: "Fetch changes from remote without merging"},
 		{ID: "git_status", Name: "Git Status", Description: "Show detailed git status"},
+		{ID: "set_system_user", Name: "Set System User", Description: "Set the user for git operations in this repo"},
 		{ID: "back", Name: "← Back to Site Commands", Description: "Return to site commands menu"},
 	}
-	
+
 	// Get user manager and available users
 	um := system.NewUserManager()
 	var availableUsers []string
@@ -198,6 +205,12 @@ func getGitInfo() GitInfo {
 		}
 	}
 
+	// Get meta.systemuser config
+	cmd = exec.Command("git", "config", "--get", "meta.systemuser")
+	if output, err := cmd.Output(); err == nil {
+		info.SystemUser = strings.TrimSpace(string(output))
+	}
+
 	return info
 }
 
@@ -231,6 +244,8 @@ func (m GitManagementModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateConfirmRemote(msg)
 	case GitStateGitOpForm:
 		return m.updateGitOpForm(msg)
+	case GitStateSetSystemUserForm:
+		return m.updateSetSystemUserForm(msg)
 	}
 
 	return m, nil
@@ -311,7 +326,7 @@ func (m GitManagementModel) updateCloneForm(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Read form values
 			m.cloneUser = m.cloneForm.GetString("cloneUser")
 			m.cloneURL = m.cloneForm.GetString("cloneURL")
-			
+
 			// Move to confirmation state
 			m.state = GitStateConfirmClone
 			return m, nil
@@ -366,7 +381,7 @@ func (m GitManagementModel) updateGitOpForm(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.gitOpForm.State == huh.StateCompleted {
 			// Read form values
 			m.gitOpUser = m.gitOpForm.GetString("gitOpUser")
-			
+
 			// Execute the git operation
 			return m.executeGitOp()
 		}
@@ -386,6 +401,95 @@ func (m GitManagementModel) updateGitOpForm(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	return m, nil
+}
+
+// updateSetSystemUserForm handles the set system user form state
+func (m GitManagementModel) updateSetSystemUserForm(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.systemUserForm != nil {
+		form, cmd := m.systemUserForm.Update(msg)
+		if f, ok := form.(*huh.Form); ok {
+			m.systemUserForm = f
+		}
+
+		// Check if form is completed
+		if m.systemUserForm.State == huh.StateCompleted {
+			// Read form values
+			m.systemUser = m.systemUserForm.GetString("systemUser")
+
+			// Set the git config
+			return m.setSystemUser()
+		}
+
+		// Handle escape to cancel
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			switch keyMsg.String() {
+			case "ctrl+c":
+				return m, tea.Quit
+			case "esc":
+				m.state = GitStateMenu
+				m.systemUserForm = nil
+				return m, nil
+			}
+		}
+
+		return m, cmd
+	}
+
+	return m, nil
+}
+
+// buildSetSystemUserForm creates the set system user form
+func (m *GitManagementModel) buildSetSystemUserForm() *huh.Form {
+	// Build user options
+	var userOptions []huh.Option[string]
+	for _, user := range m.availableUsers {
+		userOptions = append(userOptions, huh.NewOption(user, user))
+	}
+
+	// Set default user from current config or first available
+	if m.systemUser == "" {
+		if m.gitInfo.SystemUser != "" {
+			m.systemUser = m.gitInfo.SystemUser
+		} else if len(m.availableUsers) > 0 {
+			m.systemUser = m.availableUsers[0]
+		}
+	}
+
+	return huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Key("systemUser").
+				Title("Select System User").
+				Description("This user will be used for all git operations in this repository").
+				Options(userOptions...).
+				Value(&m.systemUser),
+		),
+	).WithTheme(m.theme.HuhTheme).
+		WithShowHelp(true).
+		WithShowErrors(true)
+}
+
+// setSystemUser saves the system user to git config
+func (m GitManagementModel) setSystemUser() (tea.Model, tea.Cmd) {
+	if m.systemUser == "" {
+		m.state = GitStateMenu
+		m.err = fmt.Errorf("no user selected")
+		m.systemUserForm = nil
+		return m, nil
+	}
+
+	// Set the git config
+	cmd := exec.Command("git", "config", "meta.systemuser", m.systemUser)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		m.err = fmt.Errorf("failed to set system user: %s", strings.TrimSpace(string(output)))
+	} else {
+		m.success = fmt.Sprintf("✓ System user set to '%s' for this repository", m.systemUser)
+		m.gitInfo = getGitInfo()
+	}
+
+	m.state = GitStateMenu
+	m.systemUserForm = nil
 	return m, nil
 }
 
@@ -471,21 +575,21 @@ func (m GitManagementModel) executeGitOp() (tea.Model, tea.Cmd) {
 			m.gitOpForm = nil
 			return m, nil
 		}
-		
-		script := fmt.Sprintf(`su - %s -c 'cd "%s" && git remote remove %s 2>&1'`, 
+
+		script := fmt.Sprintf(`su - %s -c 'cd "%s" && git remote remove %s 2>&1'`,
 			m.gitOpUser, m.currentDir, m.gitInfo.RemoteName)
-		
+
 		cmd := exec.Command("bash", "-c", script)
 		output, err := cmd.CombinedOutput()
 		outputStr := strings.TrimSpace(string(output))
-		
+
 		if err != nil {
 			m.err = fmt.Errorf("failed to remove remote: %s", outputStr)
 		} else {
 			m.success = fmt.Sprintf("✓ Remote '%s' removed successfully", m.gitInfo.RemoteName)
 			m.gitInfo = getGitInfo()
 		}
-		
+
 		m.state = GitStateMenu
 		m.gitOpForm = nil
 		return m, nil
@@ -544,7 +648,7 @@ func (m GitManagementModel) updateAddRemoteForm(msg tea.Msg) (tea.Model, tea.Cmd
 			// Read form values
 			m.remoteUser = m.remoteForm.GetString("remoteUser")
 			m.remoteURL = m.remoteForm.GetString("remoteURL")
-			
+
 			// Move to confirmation state
 			m.state = GitStateConfirmRemote
 			return m, nil
@@ -860,7 +964,7 @@ done
 
 for key in ~/.ssh/id_* ; do
     if [ -f "$key" ] && [ "${key}" = "${key%%.pub}" ]; then
-        ssh-add "$key" 2>/dev/null || true
+        ssh-add "$key" 2>/dev/null && KEYS_ADDED=$((KEYS_ADDED+1))
     fi
 done
 
@@ -922,6 +1026,14 @@ if [ $CLONE_EXIT -eq 0 ]; then
     fi
     
     echo ""
+    echo "  [5/5] Setting system user for git operations..."
+    
+    # Set meta.systemuser config so future git operations use this user
+    cd "$TARGET_DIR"
+    git config meta.systemuser "$CLONE_USER"
+    echo "        ✓ System user set to '$CLONE_USER'"
+    
+    echo ""
     echo "══════════════════════════════════════════════════════════"
     echo "  ✓ Clone completed successfully!"
     echo "══════════════════════════════════════════════════════════"
@@ -953,7 +1065,7 @@ func (m GitManagementModel) runTestConnection() (tea.Model, tea.Cmd) {
 	selectedUser := m.testForm.GetString("selectedUser")
 	selectedKey := m.testForm.GetString("selectedKey")
 	m.testForm = nil
-	
+
 	if selectedUser == "" {
 		m.state = GitStateMenu
 		m.err = fmt.Errorf("no user selected")
@@ -1012,9 +1124,9 @@ ssh-agent -k > /dev/null 2>&1 || true
 
 	cmd := exec.Command("bash", "-c", script)
 	output, err := cmd.CombinedOutput()
-	
+
 	outputStr := strings.TrimSpace(string(output))
-	
+
 	// Build key info for display
 	keyInfo := "Auto-detect"
 	if selectedKey != "auto" && selectedKey != "" {
@@ -1023,25 +1135,25 @@ ssh-agent -k > /dev/null 2>&1 || true
 			keyInfo = parts[len(parts)-1]
 		}
 	}
-	
+
 	// GitHub returns exit code 1 even on success (it says "Hi username!")
 	// So we check the output content instead of error
-	if strings.Contains(outputStr, "successfully authenticated") || 
-	   strings.Contains(outputStr, "Hi ") ||
-	   strings.Contains(outputStr, "You've successfully authenticated") {
+	if strings.Contains(outputStr, "successfully authenticated") ||
+		strings.Contains(outputStr, "Hi ") ||
+		strings.Contains(outputStr, "You've successfully authenticated") {
 		m.success = fmt.Sprintf("✓ SSH Connection Successful!\n\nUser: %s\nKey: %s\n\nResponse: %s", selectedUser, keyInfo, outputStr)
-	} else if strings.Contains(outputStr, "Permission denied") || 
-	          strings.Contains(outputStr, "publickey") {
+	} else if strings.Contains(outputStr, "Permission denied") ||
+		strings.Contains(outputStr, "publickey") {
 		m.err = fmt.Errorf("SSH Connection Failed\n\nUser: %s\nKey: %s\n\n%s\n\nTroubleshooting:\n• Check if SSH key exists for this user\n• Verify key is added to GitHub/GitLab\n• Make sure the key has login enabled", selectedUser, keyInfo, outputStr)
 	} else if strings.Contains(outputStr, "Could not resolve") ||
-	          strings.Contains(outputStr, "Network is unreachable") {
+		strings.Contains(outputStr, "Network is unreachable") {
 		m.err = fmt.Errorf("Network Error\n\n%s\n\nCheck your internet connection", outputStr)
 	} else if err != nil {
 		m.err = fmt.Errorf("Connection test failed\n\nUser: %s\nKey: %s\n\n%s", selectedUser, keyInfo, outputStr)
 	} else {
 		m.success = fmt.Sprintf("Connection test completed\n\nUser: %s\nKey: %s\n\nResponse:\n%s", selectedUser, keyInfo, outputStr)
 	}
-	
+
 	m.state = GitStateMenu
 	return m, nil
 }
@@ -1158,6 +1270,12 @@ func (m GitManagementModel) executeAction() (tea.Model, tea.Cmd) {
 			m.err = fmt.Errorf("no users available")
 			return m, nil
 		}
+		// Use system user if configured, otherwise show form
+		if m.gitInfo.SystemUser != "" {
+			m.gitOpUser = m.gitInfo.SystemUser
+			m.gitOpAction = "git_pull"
+			return m.executeGitOp()
+		}
 		m.state = GitStateGitOpForm
 		m.gitOpForm = m.buildGitOpForm("git_pull")
 		return m, m.gitOpForm.Init()
@@ -1166,6 +1284,12 @@ func (m GitManagementModel) executeAction() (tea.Model, tea.Cmd) {
 		if len(m.availableUsers) == 0 {
 			m.err = fmt.Errorf("no users available")
 			return m, nil
+		}
+		// Use system user if configured, otherwise show form
+		if m.gitInfo.SystemUser != "" {
+			m.gitOpUser = m.gitInfo.SystemUser
+			m.gitOpAction = "git_fetch"
+			return m.executeGitOp()
 		}
 		m.state = GitStateGitOpForm
 		m.gitOpForm = m.buildGitOpForm("git_fetch")
@@ -1176,9 +1300,28 @@ func (m GitManagementModel) executeAction() (tea.Model, tea.Cmd) {
 			m.err = fmt.Errorf("no users available")
 			return m, nil
 		}
+		// Use system user if configured, otherwise show form
+		if m.gitInfo.SystemUser != "" {
+			m.gitOpUser = m.gitInfo.SystemUser
+			m.gitOpAction = "git_status"
+			return m.executeGitOp()
+		}
 		m.state = GitStateGitOpForm
 		m.gitOpForm = m.buildGitOpForm("git_status")
 		return m, m.gitOpForm.Init()
+
+	case "set_system_user":
+		if !m.gitInfo.IsRepo {
+			m.err = fmt.Errorf("not a git repository")
+			return m, nil
+		}
+		if len(m.availableUsers) == 0 {
+			m.err = fmt.Errorf("no users available")
+			return m, nil
+		}
+		m.state = GitStateSetSystemUserForm
+		m.systemUserForm = m.buildSetSystemUserForm()
+		return m, m.systemUserForm.Init()
 
 	case "back":
 		return m, func() tea.Msg {
@@ -1209,6 +1352,8 @@ func (m GitManagementModel) View() string {
 		return m.renderConfirmRemote()
 	case GitStateGitOpForm:
 		return m.renderGitOpForm()
+	case GitStateSetSystemUserForm:
+		return m.renderSetSystemUserForm()
 	default:
 		return m.renderMenu()
 	}
@@ -1267,6 +1412,14 @@ func (m GitManagementModel) renderMenu() string {
 			infoLines = append(infoLines, m.theme.Label.Render("Status: ")+strings.Join(statusParts, " • "))
 		} else if !m.gitInfo.HasChanges {
 			infoLines = append(infoLines, m.theme.Label.Render("Status: ")+m.theme.SuccessStyle.Render("✓ Clean working tree"))
+		}
+
+		// System user
+		sysUserLabel := m.theme.Label.Render("System User: ")
+		if m.gitInfo.SystemUser != "" {
+			infoLines = append(infoLines, sysUserLabel+m.theme.SuccessStyle.Render(m.gitInfo.SystemUser))
+		} else {
+			infoLines = append(infoLines, sysUserLabel+m.theme.WarningStyle.Render("Not set (will prompt on git operations)"))
 		}
 	}
 
@@ -1445,7 +1598,7 @@ func (m GitManagementModel) renderConfirmClone() string {
 	summaryLines = append(summaryLines, m.theme.Label.Render("Directory:   ")+m.theme.InfoStyle.Render(m.currentDir))
 	summaryLines = append(summaryLines, m.theme.Label.Render("User:        ")+m.theme.InfoStyle.Render(m.cloneUser))
 	summaryLines = append(summaryLines, m.theme.Label.Render("Repository:  ")+m.theme.SuccessStyle.Render(m.cloneURL))
-	
+
 	if needsOwnershipChange {
 		summaryLines = append(summaryLines, "")
 		summaryLines = append(summaryLines, m.theme.Label.Render("Current Owner: ")+m.theme.WarningStyle.Render(currentOwner))
@@ -1555,6 +1708,54 @@ func (m GitManagementModel) renderGitOpForm() string {
 	)
 }
 
+// renderSetSystemUserForm renders the set system user form
+func (m GitManagementModel) renderSetSystemUserForm() string {
+	header := m.theme.Title.Render("Set System User")
+
+	// Show current directory
+	dirInfo := m.theme.Label.Render("Directory: ") + m.theme.InfoStyle.Render(m.currentDir)
+
+	// Current system user if set
+	currentUser := ""
+	if m.gitInfo.SystemUser != "" {
+		currentUser = m.theme.Label.Render("Current: ") + m.theme.InfoStyle.Render(m.gitInfo.SystemUser)
+	}
+
+	description := m.theme.DescriptionStyle.Render("Select the user for git operations in this repository.\nThis user will be used for pull, fetch, status, etc.")
+
+	formView := ""
+	if m.systemUserForm != nil {
+		formView = m.systemUserForm.View()
+	}
+
+	help := m.theme.Help.Render("Enter: Submit • Esc: Cancel")
+
+	// Apply padding
+	paddingH := 4
+	paddingV := 1
+
+	sections := []string{header, "", dirInfo}
+	if currentUser != "" {
+		sections = append(sections, currentUser)
+	}
+	sections = append(sections, "", description, "", formView, "", help)
+
+	content := lipgloss.JoinVertical(lipgloss.Left, sections...)
+
+	paddedContent := lipgloss.NewStyle().
+		Padding(paddingV, paddingH).
+		Render(content)
+
+	bordered := m.theme.BorderStyle.Render(paddedContent)
+	return lipgloss.Place(
+		m.width,
+		m.height,
+		lipgloss.Center,
+		lipgloss.Center,
+		bordered,
+	)
+}
+
 // renderAddRemoteForm renders the add remote form
 func (m GitManagementModel) renderAddRemoteForm() string {
 	header := m.theme.Title.Render("Add/Setup Git Remote")
@@ -1611,7 +1812,7 @@ func (m GitManagementModel) renderConfirmRemote() string {
 	summaryLines = append(summaryLines, m.theme.Label.Render("Directory:   ")+m.theme.InfoStyle.Render(m.currentDir))
 	summaryLines = append(summaryLines, m.theme.Label.Render("User:        ")+m.theme.InfoStyle.Render(m.remoteUser))
 	summaryLines = append(summaryLines, m.theme.Label.Render("Remote URL:  ")+m.theme.SuccessStyle.Render(m.remoteURL))
-	
+
 	if m.gitInfo.RemoteURL != "" {
 		summaryLines = append(summaryLines, "")
 		summaryLines = append(summaryLines, m.theme.WarningStyle.Render("⚠ This will replace the existing remote URL:"))

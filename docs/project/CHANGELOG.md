@@ -2,6 +2,68 @@
 
 [← Back to Documentation](../README.md)
 
+## [0.3.1] - 2026-01-26
+
+### Added
+- **Git System User Management** - Track and manage git operations per repository
+  - `git config meta.systemuser` automatically set after cloning
+  - Git pull, fetch, status now use configured system user automatically
+  - New "Set System User" option in Git Operations menu
+  - Prevents duplicate repo setups for same user
+  - System user displayed in Git Operations info panel
+
+- **Laravel App Menu** - Reorganized Laravel tools into dedicated submenu
+  - Moved from Site Commands: Laravel Permissions, Artisan commands
+  - New: Create .env from .env.example with environment selection (local/staging/production)
+  - New: Option to auto-generate APP_KEY after .env creation
+  - New: Artisan Key Generate command
+  - New: Setup Laravel Scheduler (www-data crontab)
+
+- **Passwordless User Creation** - Industry-standard SSH key-only authentication
+  - Users created without password (SSH key-only auth)
+  - Passwordless su - switch users without password prompt
+  - Passwordless sudo (NOPASSWD) - creates `/etc/sudoers.d/{username}` with NOPASSWD:ALL
+  - New form option: "Passwordless Access (NOPASSWD)"
+  - Validates sudoers file with `visudo -c` before applying
+
+- **FrankenPHP Enhancements**
+  - Socket/Port selection for service creation (Unix Socket recommended, TCP Port option)
+  - Fixed web directory path - now relative to site root (e.g., "public" becomes /var/www/site/public)
+  - Fixed service edit form not completing
+  - Fixed service edit crash with bounds checking
+
+- **NPM Build Improvements**
+  - Now runs `npm install && npm run build` (both commands)
+  - Runs as configured system user via `su - {user}`
+
+- **Developer Toolkit Integration**
+  - System user passed to toolkit commands for proper execution context
+
+### Changed
+- **Menu Reorganization**
+  - Removed FrankenPHP from Setup Install menu (available via Site Commands)
+  - Removed Node.js from Setup Install menu (managed via npm commands)
+  - Removed FrankenPHP and Node.js from Installed Applications
+  - Laravel permissions screen renamed to "Laravel App"
+
+- **User Creation Form**
+  - Removed password field (passwordless by default)
+  - Added "Passwordless Access (NOPASSWD)" toggle (default: Yes)
+  - Grant Sudo now defaults to Yes
+  - Added form field keys for reliable value capture
+
+### Fixed
+- **User Creation Form** - Username field now properly captures input
+- **FrankenPHP Service Edit** - Form completion now triggers save correctly
+- **FrankenPHP Service Edit Crash** - Added nil checks and bounds validation
+
+### Technical
+- New UserManager methods: `CreateUserPasswordless`, `GrantSudoNoPassword`, `EnablePasswordlessSu`, `RevokeSudoNoPassword`
+- Git operations now check `meta.systemuser` config before prompting for user
+- Laravel permissions use system user from git config for chown commands
+
+---
+
 ## [0.2.2] - 2026-01-26
 
 ### Added

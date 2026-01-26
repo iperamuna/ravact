@@ -23,10 +23,10 @@ type AddUserModel struct {
 	form *huh.Form
 
 	// Form fields
-	username  string
-	password  string
-	shell     string
-	grantSudo bool
+	username       string
+	shell          string
+	grantSudo      bool
+	passwordlessSu bool // Allow passwordless su and sudo NOPASSWD
 
 	// UI state
 	err       error
@@ -39,18 +39,19 @@ func NewAddUserModel() AddUserModel {
 	t := theme.DefaultTheme()
 
 	m := AddUserModel{
-		theme:       t,
-		userManager: system.NewUserManager(),
-		username:    "",
-		password:    "",
-		shell:       "/bin/bash",
-		grantSudo:   false,
+		theme:          t,
+		userManager:    system.NewUserManager(),
+		username:       "",
+		shell:          "/bin/bash",
+		grantSudo:      true,
+		passwordlessSu: true,
 	}
 
 	// Create the huh form
 	m.form = huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
+				Key("username").
 				Title("Username").
 				Description("Must be 3+ chars, start with letter, lowercase/numbers/_/-").
 				Placeholder("Enter username...").
@@ -68,23 +69,8 @@ func NewAddUserModel() AddUserModel {
 				}).
 				Value(&m.username),
 
-			huh.NewInput().
-				Title("Password").
-				Description("Must be at least 6 characters").
-				Placeholder("Enter password...").
-				EchoMode(huh.EchoModePassword).
-				Validate(func(s string) error {
-					if s == "" {
-						return fmt.Errorf("password cannot be empty")
-					}
-					if len(s) < 6 {
-						return fmt.Errorf("password must be at least 6 characters")
-					}
-					return nil
-				}).
-				Value(&m.password),
-
 			huh.NewSelect[string]().
+				Key("shell").
 				Title("Shell").
 				Description("Default shell for the user").
 				Options(
@@ -96,11 +82,20 @@ func NewAddUserModel() AddUserModel {
 				Value(&m.shell),
 
 			huh.NewConfirm().
+				Key("grantSudo").
 				Title("Grant Sudo Privileges").
-				Description("Allow user to run commands as root").
+				Description("Add user to sudo group").
 				Affirmative("Yes").
 				Negative("No").
 				Value(&m.grantSudo),
+
+			huh.NewConfirm().
+				Key("passwordlessSu").
+				Title("Passwordless Access (NOPASSWD)").
+				Description("Allow su and sudo without password (SSH key-only auth)").
+				Affirmative("Yes").
+				Negative("No").
+				Value(&m.passwordlessSu),
 		),
 	).WithTheme(t.HuhTheme).
 		WithShowHelp(true).
@@ -179,6 +174,15 @@ func (m AddUserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Check if form is completed
 	if m.form.State == huh.StateCompleted {
+		// Explicitly read form values to ensure they're captured
+		if v := m.form.GetString("username"); v != "" {
+			m.username = v
+		}
+		if v := m.form.GetString("shell"); v != "" {
+			m.shell = v
+		}
+		// Note: GetBool doesn't exist, grantSudo and passwordlessSu should be bound via Value()
+		
 		if err := m.createUser(); err != nil {
 			m.err = err
 			// Reset form state to allow retry
@@ -194,9 +198,16 @@ func (m AddUserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // rebuildForm creates a fresh form instance
 func (m *AddUserModel) rebuildForm() *huh.Form {
+	// Reset form field values
+	m.username = ""
+	m.shell = "/bin/bash"
+	m.grantSudo = true
+	m.passwordlessSu = true
+
 	return huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
+				Key("username").
 				Title("Username").
 				Description("Must be 3+ chars, start with letter, lowercase/numbers/_/-").
 				Placeholder("Enter username...").
@@ -214,23 +225,8 @@ func (m *AddUserModel) rebuildForm() *huh.Form {
 				}).
 				Value(&m.username),
 
-			huh.NewInput().
-				Title("Password").
-				Description("Must be at least 6 characters").
-				Placeholder("Enter password...").
-				EchoMode(huh.EchoModePassword).
-				Validate(func(s string) error {
-					if s == "" {
-						return fmt.Errorf("password cannot be empty")
-					}
-					if len(s) < 6 {
-						return fmt.Errorf("password must be at least 6 characters")
-					}
-					return nil
-				}).
-				Value(&m.password),
-
 			huh.NewSelect[string]().
+				Key("shell").
 				Title("Shell").
 				Description("Default shell for the user").
 				Options(
@@ -242,11 +238,20 @@ func (m *AddUserModel) rebuildForm() *huh.Form {
 				Value(&m.shell),
 
 			huh.NewConfirm().
+				Key("grantSudo").
 				Title("Grant Sudo Privileges").
-				Description("Allow user to run commands as root").
+				Description("Add user to sudo group").
 				Affirmative("Yes").
 				Negative("No").
 				Value(&m.grantSudo),
+
+			huh.NewConfirm().
+				Key("passwordlessSu").
+				Title("Passwordless Access (NOPASSWD)").
+				Description("Allow su and sudo without password (SSH key-only auth)").
+				Affirmative("Yes").
+				Negative("No").
+				Value(&m.passwordlessSu),
 		),
 	).WithTheme(m.theme.HuhTheme).
 		WithShowHelp(true).
@@ -255,17 +260,30 @@ func (m *AddUserModel) rebuildForm() *huh.Form {
 
 // createUser creates the user with the form values
 func (m *AddUserModel) createUser() error {
-	// Create user
-	err := m.userManager.CreateUser(m.username, m.password, m.shell)
+	// Create user without password (passwordless - SSH key-only)
+	err := m.userManager.CreateUserPasswordless(m.username, m.shell)
 	if err != nil {
 		return fmt.Errorf("failed to create user: %v", err)
 	}
 
 	// Grant sudo if requested
 	if m.grantSudo {
-		err = m.userManager.GrantSudo(m.username)
+		if m.passwordlessSu {
+			// Grant sudo with NOPASSWD
+			err = m.userManager.GrantSudoNoPassword(m.username)
+		} else {
+			err = m.userManager.GrantSudo(m.username)
+		}
 		if err != nil {
 			return fmt.Errorf("user created but failed to grant sudo: %v", err)
+		}
+	}
+
+	// Enable passwordless su if requested (without sudo)
+	if m.passwordlessSu && !m.grantSudo {
+		err = m.userManager.EnablePasswordlessSu(m.username)
+		if err != nil {
+			return fmt.Errorf("user created but failed to enable passwordless su: %v", err)
 		}
 	}
 
