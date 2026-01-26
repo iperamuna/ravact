@@ -21,23 +21,50 @@ type UserDetailsModel struct {
 	actions     []string
 	err         error
 	message     string
+	confirmAction string // Action waiting for confirmation
 }
 
 // NewUserDetailsModel creates a new user details model
 func NewUserDetailsModel(user system.User) UserDetailsModel {
-	actions := []string{
-		"Toggle Sudo Access",
-		"Change Shell",
-		"Delete User",
-	}
+	um := system.NewUserManager()
+	
+	// Build dynamic actions based on current state
+	actions := buildUserActions(user, um)
 
 	return UserDetailsModel{
 		theme:       theme.DefaultTheme(),
 		user:        user,
-		userManager: system.NewUserManager(),
+		userManager: um,
 		cursor:      0,
 		actions:     actions,
 	}
+}
+
+// buildUserActions builds the action list based on current state
+func buildUserActions(user system.User, um *system.UserManager) []string {
+	actions := []string{
+		"SSH Key Management",
+		"Toggle Sudo Access",
+		"Change Shell",
+	}
+
+	// SSH Key Login toggle
+	if um.IsSSHKeyLoginDisabled(user.Username) {
+		actions = append(actions, "Enable SSH Key Login")
+	} else {
+		actions = append(actions, "Disable SSH Key Login")
+	}
+
+	// SSH Password Login toggle (global setting)
+	if um.IsPasswordSSHLoginDisabled() {
+		actions = append(actions, "Enable SSH Password Login (Global)")
+	} else {
+		actions = append(actions, "Disable SSH Password Login (Global)")
+	}
+
+	actions = append(actions, "Delete User")
+
+	return actions
 }
 
 // Init initializes the user details screen
@@ -54,6 +81,11 @@ func (m UserDetailsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// Handle confirmation dialogs
+		if m.confirmAction != "" {
+			return m.handleConfirmation(msg)
+		}
+
 		// If there's a message, any key clears it
 		if m.message != "" {
 			switch msg.String() {
@@ -65,6 +97,8 @@ func (m UserDetailsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			default:
 				m.message = ""
+				// Rebuild actions in case state changed
+				m.actions = buildUserActions(m.user, m.userManager)
 				return m, nil
 			}
 		}
@@ -104,33 +138,124 @@ func (m UserDetailsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "enter", " ":
-			switch m.cursor {
-			case 0: // Toggle Sudo
-				action := "grant"
-				if m.user.HasSudo {
-					action = "revoke"
-				}
-				err := m.userManager.ToggleSudo(m.user.Username)
-				if err != nil {
-					m.err = fmt.Errorf("failed to %s sudo: %v", action, err)
-				} else {
-					m.user.HasSudo = !m.user.HasSudo
-					if m.user.HasSudo {
-						m.message = fmt.Sprintf("✓ Granted sudo access to %s", m.user.Username)
-					} else {
-						m.message = fmt.Sprintf("✓ Revoked sudo access from %s", m.user.Username)
-					}
-				}
+			return m.executeAction(m.actions[m.cursor])
+		}
+	}
 
-			case 1: // Change Shell
-				m.message = "Feature coming soon: Shell selection menu"
+	return m, nil
+}
 
-			case 2: // Delete User
-				if m.user.Username == "root" {
-					m.err = fmt.Errorf("cannot delete root user")
-				} else {
-					m.message = fmt.Sprintf("⚠ Delete user '%s'?\nPress 'y' to confirm, any other key to cancel", m.user.Username)
-				}
+// handleConfirmation handles confirmation dialog responses
+func (m UserDetailsModel) handleConfirmation(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c", "q":
+		return m, tea.Quit
+	case "esc", "backspace", "n", "N":
+		m.confirmAction = ""
+		return m, nil
+	case "y", "Y":
+		action := m.confirmAction
+		m.confirmAction = ""
+		return m.confirmExecuteAction(action)
+	}
+	return m, nil
+}
+
+// executeAction executes the selected action
+func (m UserDetailsModel) executeAction(action string) (tea.Model, tea.Cmd) {
+	switch action {
+	case "SSH Key Management":
+		return m, func() tea.Msg {
+			return NavigateMsg{Screen: SSHKeyManagementScreen, Data: m.user.Username}
+		}
+
+	case "Toggle Sudo Access":
+		actionDesc := "grant"
+		if m.user.HasSudo {
+			actionDesc = "revoke"
+		}
+		err := m.userManager.ToggleSudo(m.user.Username)
+		if err != nil {
+			m.err = fmt.Errorf("failed to %s sudo: %v", actionDesc, err)
+		} else {
+			m.user.HasSudo = !m.user.HasSudo
+			if m.user.HasSudo {
+				m.message = fmt.Sprintf("✓ Granted sudo access to %s", m.user.Username)
+			} else {
+				m.message = fmt.Sprintf("✓ Revoked sudo access from %s", m.user.Username)
+			}
+		}
+
+	case "Change Shell":
+		m.message = "Feature coming soon: Shell selection menu"
+
+	case "Disable SSH Key Login":
+		m.confirmAction = action
+		m.message = fmt.Sprintf("⚠ Disable SSH key login for '%s'?\n\nThis will rename authorized_keys to authorized_keys.disabled.\nThe user will not be able to login using SSH keys.\n\nPress 'y' to confirm, 'n' or Esc to cancel", m.user.Username)
+
+	case "Enable SSH Key Login":
+		err := m.userManager.EnableSSHKeyLogin(m.user.Username)
+		if err != nil {
+			m.err = fmt.Errorf("failed to enable SSH key login: %v", err)
+		} else {
+			m.message = fmt.Sprintf("✓ SSH key login enabled for %s", m.user.Username)
+			m.actions = buildUserActions(m.user, m.userManager)
+		}
+
+	case "Disable SSH Password Login (Global)":
+		m.confirmAction = action
+		m.message = "⚠ Disable SSH password login globally?\n\nThis will set 'PasswordAuthentication no' in /etc/ssh/sshd_config.\nAll users will be unable to login using passwords via SSH.\nMake sure you have SSH key access configured!\n\nPress 'y' to confirm, 'n' or Esc to cancel"
+
+	case "Enable SSH Password Login (Global)":
+		err := m.userManager.EnablePasswordSSHLogin()
+		if err != nil {
+			m.err = fmt.Errorf("failed to enable SSH password login: %v", err)
+		} else {
+			m.message = "✓ SSH password login enabled globally"
+			m.actions = buildUserActions(m.user, m.userManager)
+		}
+
+	case "Delete User":
+		if m.user.Username == "root" {
+			m.err = fmt.Errorf("cannot delete root user")
+		} else {
+			m.confirmAction = action
+			m.message = fmt.Sprintf("⚠ Delete user '%s'?\n\nThis will remove the user account.\nPress 'y' to confirm, 'n' or Esc to cancel", m.user.Username)
+		}
+	}
+
+	return m, nil
+}
+
+// confirmExecuteAction executes an action after confirmation
+func (m UserDetailsModel) confirmExecuteAction(action string) (tea.Model, tea.Cmd) {
+	switch action {
+	case "Disable SSH Key Login":
+		err := m.userManager.DisableSSHKeyLogin(m.user.Username)
+		if err != nil {
+			m.err = fmt.Errorf("failed to disable SSH key login: %v", err)
+		} else {
+			m.message = fmt.Sprintf("✓ SSH key login disabled for %s", m.user.Username)
+			m.actions = buildUserActions(m.user, m.userManager)
+		}
+
+	case "Disable SSH Password Login (Global)":
+		err := m.userManager.DisablePasswordSSHLogin(m.user.Username)
+		if err != nil {
+			m.err = fmt.Errorf("failed to disable SSH password login: %v", err)
+		} else {
+			m.message = "✓ SSH password login disabled globally\n\n⚠ Make sure you have SSH key access configured!"
+			m.actions = buildUserActions(m.user, m.userManager)
+		}
+
+	case "Delete User":
+		err := m.userManager.DeleteUser(m.user.Username, false)
+		if err != nil {
+			m.err = fmt.Errorf("failed to delete user: %v", err)
+		} else {
+			m.message = fmt.Sprintf("✓ User '%s' deleted successfully", m.user.Username)
+			return m, func() tea.Msg {
+				return NavigateMsg{Screen: UserManagementScreen}
 			}
 		}
 	}

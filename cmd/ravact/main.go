@@ -56,11 +56,13 @@ type Model struct {
 	phpVersion     screens.PHPVersionModel
 	phpInstall     screens.PHPInstallModel
 	phpExtensions  screens.PHPExtensionsModel
-	frankenphpClassic screens.FrankenPHPClassicModel
+	frankenphpClassic   screens.FrankenPHPClassicModel
+	frankenphpServices  screens.FrankenPHPServicesModel
 	quickCommands  screens.QuickCommandsModel
 	execution      screens.ExecutionModel
 	developerToolkit screens.DeveloperToolkitModel
 	fileBrowser      screens.FileBrowserModel
+	sshKeyManagement screens.SSHKeyManagementModel
 	configEditorActive string // "add_site" or "site_details"
 	width          int
 	height         int
@@ -370,6 +372,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case screens.FrankenPHPClassicScreen:
 			// Initialize FrankenPHP Classic Mode screen
 			m.frankenphpClassic = screens.NewFrankenPHPClassicModel()
+			initCmd = m.frankenphpClassic.Init()
+
+		case screens.FrankenPHPServicesScreen:
+			// Initialize FrankenPHP Services screen
+			m.frankenphpServices = screens.NewFrankenPHPServicesModel()
+			initCmd = m.frankenphpServices.Init()
 
 		case screens.DeveloperToolkitScreen:
 			// Initialize Developer Toolkit screen
@@ -389,6 +397,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			} else {
 				m.fileBrowser = screens.NewFileBrowserModel()
+			}
+		
+		case screens.SSHKeyManagementScreen:
+			// Initialize SSH Key Management screen
+			if msg.Data != nil {
+				if username, ok := msg.Data.(string); ok {
+					m.sshKeyManagement = screens.NewSSHKeyManagementModel(username)
+				}
 			}
 		
 		case screens.RedisPasswordScreen:
@@ -676,6 +692,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		model, cmd = m.frankenphpClassic.Update(msg)
 		m.frankenphpClassic = model.(screens.FrankenPHPClassicModel)
 
+	case screens.FrankenPHPServicesScreen:
+		var model tea.Model
+		model, cmd = m.frankenphpServices.Update(msg)
+		m.frankenphpServices = model.(screens.FrankenPHPServicesModel)
+
 	case screens.DeveloperToolkitScreen:
 		var model tea.Model
 		model, cmd = m.developerToolkit.Update(msg)
@@ -685,6 +706,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var model tea.Model
 		model, cmd = m.fileBrowser.Update(msg)
 		m.fileBrowser = model.(screens.FileBrowserModel)
+	
+	case screens.SSHKeyManagementScreen:
+		var model tea.Model
+		model, cmd = m.sshKeyManagement.Update(msg)
+		m.sshKeyManagement = model.(screens.SSHKeyManagementModel)
 	
 	case screens.RedisPasswordScreen:
 		var model tea.Model
@@ -786,10 +812,15 @@ func (m Model) View() string {
 		view = m.phpExtensions.View()
 	case screens.FrankenPHPClassicScreen:
 		view = m.frankenphpClassic.View()
+
+	case screens.FrankenPHPServicesScreen:
+		view = m.frankenphpServices.View()
 	case screens.DeveloperToolkitScreen:
 		view = m.developerToolkit.View()
 	case screens.FileBrowserScreen:
 		view = m.fileBrowser.View()
+	case screens.SSHKeyManagementScreen:
+		view = m.sshKeyManagement.View()
 	case screens.RedisPasswordScreen:
 		view = m.redisPassword.View()
 	case screens.RedisPortScreen:

@@ -43,6 +43,12 @@ func NewSiteCommandsModel() SiteCommandsModel {
 			Screen:      FrankenPHPClassicScreen,
 		},
 		{
+			ID:          "setup_php_symlink",
+			Name:        "Setup PHP → FrankenPHP Symlink",
+			Description: "Create php → fpcli symlink for CLI commands",
+			Screen:      ExecutionScreen,
+		},
+		{
 			ID:          "laravel",
 			Name:        "Laravel Permissions",
 			Description: "Set proper file permissions for Laravel projects",
@@ -63,7 +69,13 @@ func NewSiteCommandsModel() SiteCommandsModel {
 		{
 			ID:          "composer_install",
 			Name:        "Composer Install",
-			Description: "Run composer install in current directory",
+			Description: "Run composer install using system PHP",
+			Screen:      ExecutionScreen,
+		},
+		{
+			ID:          "composer_install_fpcli",
+			Name:        "Composer Install (FrankenPHP)",
+			Description: "Run composer install using fpcli (FrankenPHP)",
 			Screen:      ExecutionScreen,
 		},
 		{
@@ -148,6 +160,51 @@ func (m SiteCommandsModel) executeAction(item SiteCommandItem) (SiteCommandsMode
 			return NavigateMsg{Screen: FrankenPHPClassicScreen}
 		}
 
+	case "setup_php_symlink":
+		// Create php → fpcli symlink
+		script := `
+echo ""
+echo "========================================="
+echo "Setting up PHP → FrankenPHP Symlink"
+echo "========================================="
+echo ""
+
+# Check if fpcli exists
+if [ ! -f /usr/local/bin/fpcli ]; then
+    echo "Error: /usr/local/bin/fpcli not found!"
+    echo ""
+    echo "Please set up FrankenPHP Classic Mode first to create the fpcli wrapper."
+    exit 1
+fi
+
+# Backup existing php if it exists and is not a symlink
+if [ -f /usr/local/bin/php ] && [ ! -L /usr/local/bin/php ]; then
+    echo "Backing up existing /usr/local/bin/php to /usr/local/bin/php.bak"
+    mv /usr/local/bin/php /usr/local/bin/php.bak
+fi
+
+# Create symlink
+ln -sf /usr/local/bin/fpcli /usr/local/bin/php
+hash -r 2>/dev/null || true
+
+echo "✓ Created symlink: /usr/local/bin/php -> /usr/local/bin/fpcli"
+echo ""
+echo "Verification:"
+echo "  Location: $(which php)"
+echo "  Version:"
+php -v
+echo ""
+echo "✓ 'php' command now uses FrankenPHP!"
+echo ""
+echo "Note: System PHP (if installed) is still available at /usr/bin/php"
+`
+		return m, func() tea.Msg {
+			return ExecutionStartMsg{
+				Command:     script,
+				Description: "Setting up PHP → FrankenPHP symlink",
+			}
+		}
+
 	case "laravel":
 		return m, func() tea.Msg {
 			return NavigateMsg{Screen: LaravelPermissionsScreen}
@@ -174,6 +231,65 @@ func (m SiteCommandsModel) executeAction(item SiteCommandItem) (SiteCommandsMode
 			return NavigateMsg{
 				Screen: PHPVersionScreen,
 				Data:   map[string]interface{}{"commandType": "composer_install"},
+			}
+		}
+
+	case "composer_install_fpcli":
+		// Run composer install using fpcli (FrankenPHP)
+		script := `
+echo ""
+echo "========================================="
+echo "Composer Install (FrankenPHP)"
+echo "========================================="
+echo ""
+
+# Check if fpcli exists
+if [ ! -f /usr/local/bin/fpcli ]; then
+    echo "Error: /usr/local/bin/fpcli not found!"
+    echo ""
+    echo "Please set up FrankenPHP Classic Mode first to create the fpcli wrapper."
+    exit 1
+fi
+
+# Check if composer.phar exists, if not check for composer command
+COMPOSER_CMD=""
+if [ -f /usr/local/bin/composer.phar ]; then
+    COMPOSER_CMD="/usr/local/bin/fpcli /usr/local/bin/composer.phar"
+    echo "Using: fpcli + composer.phar"
+elif [ -f /usr/local/bin/composer ]; then
+    # Check if it's already a wrapper
+    if head -1 /usr/local/bin/composer 2>/dev/null | grep -q "bash\|sh"; then
+        COMPOSER_CMD="/usr/local/bin/composer"
+        echo "Using: composer wrapper"
+    else
+        COMPOSER_CMD="/usr/local/bin/fpcli /usr/local/bin/composer"
+        echo "Using: fpcli + composer"
+    fi
+elif command -v composer &> /dev/null; then
+    COMPOSER_PATH=$(which composer)
+    COMPOSER_CMD="/usr/local/bin/fpcli $COMPOSER_PATH"
+    echo "Using: fpcli + $COMPOSER_PATH"
+else
+    echo "Error: Composer not found!"
+    echo ""
+    echo "Please install Composer first via FrankenPHP Classic Mode setup"
+    echo "or run: curl -sS https://getcomposer.org/installer | fpcli"
+    exit 1
+fi
+
+echo ""
+echo "Running: $COMPOSER_CMD install"
+echo ""
+
+$COMPOSER_CMD install
+
+echo ""
+echo "✓ Composer install completed!"
+`
+		return m, func() tea.Msg {
+			return ExecutionStartMsg{
+				Command:     script,
+				Description: "Running composer install with FrankenPHP",
 			}
 		}
 

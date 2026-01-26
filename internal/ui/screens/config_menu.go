@@ -106,6 +106,13 @@ func NewConfigMenuModel() ConfigMenuModel {
 			Screen:      SupervisorManagementScreen,
 		},
 		{
+			ID:          "frankenphp_services",
+			Name:        "FrankenPHP Services",
+			Description: "Manage FrankenPHP sites: start, stop, restart, enable, disable, edit",
+			Available:   true, // Always available - will show message if no services
+			Screen:      FrankenPHPServicesScreen,
+		},
+		{
 			ID:          "firewall",
 			Name:        "Firewall (UFW/firewalld)",
 			Description: getDescription(firewallInstalled, "Manage firewall rules, ports, and security settings"),

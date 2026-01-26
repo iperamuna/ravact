@@ -5,30 +5,57 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/iperamuna/ravact/internal/ui/theme"
 )
 
 // FrankenPHPClassicModel represents the FrankenPHP Classic Mode screen
 type FrankenPHPClassicModel struct {
-	theme           *theme.Theme
-	width           int
-	height          int
-	cursor          int
-	mode            string // "check", "install_options", "site_setup", "confirm", "custom_url_input"
-	binaryPath      string
-	binaryVersion   string
-	binaryFound     bool
-	installOptions  []FrankenPHPInstallOption
-	siteSetupFields []FrankenPHPField
-	currentField    int
-	err             error
-	success         string
-	inputMode       bool
-	customURL       string // For custom URL input
+	theme         *theme.Theme
+	width         int
+	height        int
+	cursor        int
+	mode          string // "install_options", "site_setup", "confirm", "custom_url_input", "composer_setup"
+	binaryPath    string
+	binaryVersion string
+	binaryFound   bool
+
+	// Install options (used when binary not found)
+	installOptions []FrankenPHPInstallOption
+	customURL      string
+
+	// Current directory (for auto-detection)
+	currentDir string
+
+	// Form fields for site setup (huh form)
+	form         *huh.Form
+	formSiteRoot string
+	formSiteKey  string
+	formDocroot  string
+	formDomains  string
+	formPort     string
+	formUser     string
+	formGroup    string
+
+	// Composer setup options
+	composerOptions []ComposerSetupOption
+	composerCursor  int
+
+	// UI state
+	err     error
+	message string
+}
+
+// ComposerSetupOption represents a composer setup option
+type ComposerSetupOption struct {
+	ID          string
+	Name        string
+	Description string
 }
 
 // FrankenPHPInstallOption represents an installation option
@@ -38,18 +65,20 @@ type FrankenPHPInstallOption struct {
 	Description string
 }
 
-// FrankenPHPField represents an input field for site setup
-type FrankenPHPField struct {
-	ID          string
-	Label       string
-	Value       string
-	Placeholder string
-	Description string
-}
-
 // NewFrankenPHPClassicModel creates a new FrankenPHP Classic Mode model
 func NewFrankenPHPClassicModel() FrankenPHPClassicModel {
+	return NewFrankenPHPClassicModelWithDir("")
+}
+
+// NewFrankenPHPClassicModelWithDir creates a new FrankenPHP Classic Mode model with a specific directory
+func NewFrankenPHPClassicModelWithDir(currentDir string) FrankenPHPClassicModel {
+	t := theme.DefaultTheme()
 	binaryPath, version, found := detectFrankenPHPBinary()
+
+	// Auto-detect current directory if not provided
+	if currentDir == "" {
+		currentDir, _ = os.Getwd()
+	}
 
 	installOptions := []FrankenPHPInstallOption{
 		{
@@ -74,14 +103,27 @@ func NewFrankenPHPClassicModel() FrankenPHPClassicModel {
 		},
 	}
 
-	siteSetupFields := []FrankenPHPField{
-		{ID: "binary_path", Label: "FrankenPHP Binary", Value: binaryPath, Placeholder: "/usr/local/bin/frankenphp", Description: "Path to FrankenPHP binary (auto-detected)"},
-		{ID: "site_root", Label: "Site Root", Value: "", Placeholder: "/var/www/mysite/current", Description: "Full path to your application root"},
-		{ID: "site_key", Label: "Site Key", Value: "", Placeholder: "mysite", Description: "Unique identifier for service/socket names"},
-		{ID: "docroot", Label: "Document Root", Value: "", Placeholder: "/var/www/mysite/current/public", Description: "Web-accessible directory (usually /public for Laravel)"},
-		{ID: "domains", Label: "Domain Names", Value: "", Placeholder: "mysite.com www.mysite.com", Description: "Space-separated domain names for Nginx"},
-		{ID: "user", Label: "Run as User", Value: "www-data", Placeholder: "www-data", Description: "System user to run the service"},
-		{ID: "group", Label: "Run as Group", Value: "www-data", Placeholder: "www-data", Description: "System group to run the service"},
+	composerOptions := []ComposerSetupOption{
+		{
+			ID:          "option_a",
+			Name:        "Option A: Replace system PHP (Recommended)",
+			Description: "Create symlink so 'php' command uses FrankenPHP. Required for Laravel/Symfony scripts.",
+		},
+		{
+			ID:          "option_both",
+			Name:        "Option A+C: PHP symlink + Composer wrapper (Best)",
+			Description: "Both PHP symlink AND composer wrapper. Full compatibility with all projects.",
+		},
+		{
+			ID:          "option_c",
+			Name:        "Option C: Composer wrapper only",
+			Description: "Only wrap composer. Note: Laravel @php scripts won't work without Option A.",
+		},
+		{
+			ID:          "skip",
+			Name:        "Skip Composer Setup",
+			Description: "Don't configure Composer integration now. You can do it manually later.",
+		},
 	}
 
 	mode := "install_options"
@@ -89,17 +131,120 @@ func NewFrankenPHPClassicModel() FrankenPHPClassicModel {
 		mode = "site_setup"
 	}
 
-	return FrankenPHPClassicModel{
-		theme:           theme.DefaultTheme(),
+	// Pre-fill site root with current directory
+	siteRoot := currentDir
+	siteKey := suggestSiteKey(siteRoot)
+
+	m := FrankenPHPClassicModel{
+		theme:           t,
 		cursor:          0,
 		mode:            mode,
 		binaryPath:      binaryPath,
 		binaryVersion:   version,
 		binaryFound:     found,
 		installOptions:  installOptions,
-		siteSetupFields: siteSetupFields,
-		currentField:    0,
+		composerOptions: composerOptions,
+		currentDir:      currentDir,
+		formSiteRoot:    siteRoot,
+		formSiteKey:     siteKey,
+		formUser:        "www-data",
+		formGroup:       "www-data",
+		formPort:        "8000",
 	}
+
+	// Build the huh form for site setup
+	m.form = m.buildSiteSetupForm()
+
+	return m
+}
+
+// buildSiteSetupForm creates the huh form for site configuration
+func (m *FrankenPHPClassicModel) buildSiteSetupForm() *huh.Form {
+	return huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Key("siteRoot").
+				Title("Site Root").
+				Description("Full path to your application root").
+				Placeholder("/var/www/mysite").
+				Validate(func(s string) error {
+					if s == "" {
+						return fmt.Errorf("site root is required")
+					}
+					if !strings.HasPrefix(s, "/") {
+						return fmt.Errorf("must be an absolute path starting with /")
+					}
+					return nil
+				}).
+				Value(&m.formSiteRoot),
+
+			huh.NewInput().
+				Key("siteKey").
+				Title("Site Key").
+				Description("Unique identifier for service/socket names").
+				Placeholder("mysite").
+				Validate(func(s string) error {
+					if s == "" {
+						return fmt.Errorf("site key is required")
+					}
+					if strings.Contains(s, " ") {
+						return fmt.Errorf("site key cannot contain spaces")
+					}
+					return nil
+				}).
+				Value(&m.formSiteKey),
+
+			huh.NewInput().
+				Key("docroot").
+				Title("Document Root").
+				Description("Web-accessible directory (usually /public for Laravel)").
+				Placeholder("/var/www/mysite/public").
+				Value(&m.formDocroot),
+
+			huh.NewInput().
+				Key("domains").
+				Title("Domain Names").
+				Description("Space-separated domain names for Nginx proxy").
+				Placeholder("mysite.com www.mysite.com").
+				Value(&m.formDomains),
+
+			huh.NewInput().
+				Key("port").
+				Title("Port").
+				Description("Port for FrankenPHP (fallback if not using Unix socket)").
+				Placeholder("8000").
+				Validate(func(s string) error {
+					if s == "" {
+						return nil // Optional, will use default
+					}
+					port, err := strconv.Atoi(s)
+					if err != nil {
+						return fmt.Errorf("port must be a number")
+					}
+					if port < 1 || port > 65535 {
+						return fmt.Errorf("port must be between 1 and 65535")
+					}
+					return nil
+				}).
+				Value(&m.formPort),
+
+			huh.NewInput().
+				Key("user").
+				Title("Run as User").
+				Description("System user to run the FrankenPHP service").
+				Placeholder("www-data").
+				Value(&m.formUser),
+
+			huh.NewInput().
+				Key("group").
+				Title("Run as Group").
+				Description("System group to run the FrankenPHP service").
+				Placeholder("www-data").
+				Value(&m.formGroup),
+		),
+	).WithTheme(m.theme.HuhTheme).
+		WithShowHelp(true).
+		WithShowErrors(true)
 }
 
 // detectFrankenPHPBinary checks if FrankenPHP is installed
@@ -138,6 +283,10 @@ func detectFrankenPHPBinary() (path string, version string, found bool) {
 
 // Init initializes the FrankenPHP Classic screen
 func (m FrankenPHPClassicModel) Init() tea.Cmd {
+	// Always initialize the form when in site_setup mode
+	if m.mode == "site_setup" && m.form != nil {
+		return m.form.Init()
+	}
 	return nil
 }
 
@@ -150,6 +299,25 @@ func (m FrankenPHPClassicModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// Handle message display state (success/error)
+		if m.message != "" {
+			switch msg.String() {
+			case "ctrl+c", "q":
+				return m, tea.Quit
+			case "esc", "backspace", "enter", " ":
+				if strings.Contains(m.message, "✓") {
+					return m, func() tea.Msg {
+						return NavigateMsg{Screen: SiteCommandsScreen}
+					}
+				}
+				m.message = ""
+				return m, nil
+			default:
+				m.message = ""
+				return m, nil
+			}
+		}
+
 		// Handle custom URL input mode
 		if m.mode == "custom_url_input" {
 			switch msg.String() {
@@ -166,12 +334,8 @@ func (m FrankenPHPClassicModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if len(m.customURL) > 0 {
 					m.customURL = m.customURL[:len(m.customURL)-1]
 				}
-			case "ctrl+v":
-				// Ctrl+V is handled by terminal paste, which sends the text directly
-				return m, nil
 			default:
 				input := msg.String()
-				// Accept any printable input (single chars or pasted text)
 				if len(input) > 0 && input != "ctrl+c" && input != "ctrl+z" {
 					m.customURL += input
 				}
@@ -179,83 +343,140 @@ func (m FrankenPHPClassicModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Handle input mode for site setup
-		if m.inputMode && m.mode == "site_setup" {
+		// Handle confirm mode
+		if m.mode == "confirm" {
 			switch msg.String() {
-			case "enter":
-				m.inputMode = false
-				// Auto-fill dependent fields
-				m.autoFillFields()
-				return m, nil
-			case "esc":
-				m.inputMode = false
-				return m, nil
-			case "backspace":
-				field := &m.siteSetupFields[m.currentField]
-				if len(field.Value) > 0 {
-					field.Value = field.Value[:len(field.Value)-1]
+			case "ctrl+c", "q":
+				return m, tea.Quit
+			case "esc", "backspace":
+				m.mode = "site_setup"
+				m.form = m.buildSiteSetupForm()
+				return m, m.form.Init()
+			case "up", "k":
+				if m.cursor > 0 {
+					m.cursor--
 				}
-			case "tab":
-				m.inputMode = false
-				if m.currentField < len(m.siteSetupFields)-1 {
-					m.currentField++
-					m.cursor = m.currentField
+			case "down", "j":
+				if m.cursor < 1 {
+					m.cursor++
 				}
-				m.inputMode = true
-			case "ctrl+v":
-				// Ctrl+V is handled by terminal paste, which sends the text directly
-				return m, nil
-			default:
-				input := msg.String()
-				// Accept any printable input (single chars or pasted text)
-				// Filter out control sequences
-				if len(input) > 0 && !strings.HasPrefix(input, "ctrl+") && !strings.HasPrefix(input, "alt+") {
-					m.siteSetupFields[m.currentField].Value += input
+			case "enter", " ":
+				if m.cursor == 0 {
+					// Yes - create the site, then show composer setup
+					m.mode = "composer_setup"
+					m.composerCursor = 0
+					return m, nil
+				} else {
+					// No - go back to form
+					m.mode = "site_setup"
+					m.form = m.buildSiteSetupForm()
+					return m, m.form.Init()
 				}
 			}
 			return m, nil
 		}
 
-		switch msg.String() {
-		case "ctrl+c", "q":
-			return m, tea.Quit
-
-		case "esc", "backspace":
-			if m.mode == "confirm" {
-				m.mode = "site_setup"
+		// Handle composer_setup mode
+		if m.mode == "composer_setup" {
+			switch msg.String() {
+			case "ctrl+c", "q":
+				return m, tea.Quit
+			case "esc", "backspace":
+				m.mode = "confirm"
+				m.cursor = 0
 				return m, nil
-			}
-			return m, func() tea.Msg {
-				return NavigateMsg{Screen: SiteCommandsScreen}
-			}
-
-		case "up", "k":
-			if m.cursor > 0 {
-				m.cursor--
-				if m.mode == "site_setup" {
-					m.currentField = m.cursor
+			case "up", "k":
+				if m.composerCursor > 0 {
+					m.composerCursor--
 				}
-			}
-
-		case "down", "j":
-			maxIdx := m.getMaxIndex()
-			if m.cursor < maxIdx {
-				m.cursor++
-				if m.mode == "site_setup" {
-					m.currentField = m.cursor
+			case "down", "j":
+				if m.composerCursor < len(m.composerOptions)-1 {
+					m.composerCursor++
 				}
+			case "enter", " ":
+				return m.executeWithComposerSetup()
 			}
+			return m, nil
+		}
 
-		case "enter", " ":
-			return m.executeAction()
+		// Handle install options mode
+		if m.mode == "install_options" {
+			switch msg.String() {
+			case "ctrl+c", "q":
+				return m, tea.Quit
+			case "esc", "backspace":
+				return m, func() tea.Msg {
+					return NavigateMsg{Screen: SiteCommandsScreen}
+				}
+			case "up", "k":
+				if m.cursor > 0 {
+					m.cursor--
+				}
+			case "down", "j":
+				if m.cursor < len(m.installOptions)-1 {
+					m.cursor++
+				}
+			case "enter", " ":
+				return m.executeInstallOption()
+			}
+			return m, nil
+		}
 
-		case "e":
-			// Edit current field in site setup mode
-			if m.mode == "site_setup" && m.cursor < len(m.siteSetupFields) {
-				m.currentField = m.cursor
-				m.inputMode = true
+		// Handle site_setup mode with huh form
+		if m.mode == "site_setup" {
+			switch msg.String() {
+			case "ctrl+c":
+				return m, tea.Quit
+			case "esc":
+				if m.form.State == huh.StateNormal {
+					return m, func() tea.Msg {
+						return NavigateMsg{Screen: SiteCommandsScreen}
+					}
+				}
 			}
 		}
+	}
+
+	// Update huh form in site_setup mode
+	if m.mode == "site_setup" && m.form != nil {
+		form, cmd := m.form.Update(msg)
+		if f, ok := form.(*huh.Form); ok {
+			m.form = f
+		}
+
+		// Check if form is completed
+		if m.form.State == huh.StateCompleted {
+			// Read form values explicitly (in case pointer binding didn't work)
+			if v := m.form.GetString("siteRoot"); v != "" {
+				m.formSiteRoot = v
+			}
+			if v := m.form.GetString("siteKey"); v != "" {
+				m.formSiteKey = v
+			}
+			if v := m.form.GetString("docroot"); v != "" {
+				m.formDocroot = v
+			}
+			if v := m.form.GetString("domains"); v != "" {
+				m.formDomains = v
+			}
+			if v := m.form.GetString("port"); v != "" {
+				m.formPort = v
+			}
+			if v := m.form.GetString("user"); v != "" {
+				m.formUser = v
+			}
+			if v := m.form.GetString("group"); v != "" {
+				m.formGroup = v
+			}
+			// Auto-fill empty fields
+			m.autoFillFields()
+			// Go to confirmation
+			m.mode = "confirm"
+			m.cursor = 0
+			return m, nil
+		}
+
+		return m, cmd
 	}
 
 	return m, nil
@@ -263,44 +484,36 @@ func (m FrankenPHPClassicModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // autoFillFields auto-fills dependent fields based on site_root
 func (m *FrankenPHPClassicModel) autoFillFields() {
-	siteRoot := ""
-	for _, f := range m.siteSetupFields {
-		if f.ID == "site_root" {
-			siteRoot = f.Value
-			break
-		}
-	}
-
-	if siteRoot == "" {
+	if m.formSiteRoot == "" {
 		return
 	}
 
-	for i := range m.siteSetupFields {
-		field := &m.siteSetupFields[i]
-		switch field.ID {
-		case "site_key":
-			if field.Value == "" {
-				// Derive from site root
-				field.Value = suggestSiteKey(siteRoot)
-			}
-		case "docroot":
-			if field.Value == "" {
-				field.Value = filepath.Join(siteRoot, "public")
-			}
-		case "domains":
-			if field.Value == "" {
-				key := ""
-				for _, f := range m.siteSetupFields {
-					if f.ID == "site_key" {
-						key = f.Value
-						break
-					}
-				}
-				if key != "" {
-					field.Value = key + ".test"
-				}
-			}
-		}
+	// Auto-fill site key from site root
+	if m.formSiteKey == "" {
+		m.formSiteKey = suggestSiteKey(m.formSiteRoot)
+	}
+
+	// Auto-fill document root
+	if m.formDocroot == "" {
+		m.formDocroot = filepath.Join(m.formSiteRoot, "public")
+	}
+
+	// Auto-fill domains
+	if m.formDomains == "" && m.formSiteKey != "" {
+		m.formDomains = m.formSiteKey + ".test"
+	}
+
+	// Default port
+	if m.formPort == "" {
+		m.formPort = "8000"
+	}
+
+	// Default user/group
+	if m.formUser == "" {
+		m.formUser = "www-data"
+	}
+	if m.formGroup == "" {
+		m.formGroup = "www-data"
 	}
 }
 
@@ -327,32 +540,14 @@ func suggestSiteKey(siteRoot string) string {
 	return result
 }
 
-// getMaxIndex returns the max cursor index for current mode
-func (m FrankenPHPClassicModel) getMaxIndex() int {
-	switch m.mode {
-	case "install_options":
-		return len(m.installOptions) - 1
-	case "site_setup":
-		return len(m.siteSetupFields) + 1 // fields + "Create Site" + "Back"
-	case "confirm":
-		return 1 // Yes/No
-	}
-	return 0
-}
-
-// executeAction handles the selected action
-func (m FrankenPHPClassicModel) executeAction() (FrankenPHPClassicModel, tea.Cmd) {
+// executeInstallOption handles the selected installation option
+func (m FrankenPHPClassicModel) executeInstallOption() (tea.Model, tea.Cmd) {
 	m.err = nil
-	m.success = ""
 
-	switch m.mode {
-	case "install_options":
-		option := m.installOptions[m.cursor]
-		switch option.ID {
-		case "download_official":
-			// Download from official source
-			// FrankenPHP release names: frankenphp-linux-x86_64 or frankenphp-linux-aarch64
-			downloadCmd := `#!/bin/bash
+	option := m.installOptions[m.cursor]
+	switch option.ID {
+	case "download_official":
+		downloadCmd := `#!/bin/bash
 set -e
 echo "=== FrankenPHP Download ==="
 echo ""
@@ -415,22 +610,20 @@ echo "Location: /usr/local/bin/frankenphp"
 echo ""
 frankenphp version || echo "Note: Run 'frankenphp version' to verify"
 `
-			return m, func() tea.Msg {
-				return ExecutionStartMsg{
-					Command:     downloadCmd,
-					Description: "Downloading FrankenPHP from official source",
-				}
+		return m, func() tea.Msg {
+			return ExecutionStartMsg{
+				Command:     downloadCmd,
+				Description: "Downloading FrankenPHP from official source",
 			}
+		}
 
-		case "custom_url":
-			// Switch to custom URL input mode
-			m.mode = "custom_url_input"
-			m.cursor = 0
-			return m, nil
+	case "custom_url":
+		m.mode = "custom_url_input"
+		m.cursor = 0
+		return m, nil
 
-		case "manual":
-			// Show manual instructions
-			m.err = fmt.Errorf(`Manual Installation Instructions:
+	case "manual":
+		m.message = `Manual Installation Instructions:
 
 1. Download FrankenPHP binary from:
    https://github.com/dunglas/frankenphp/releases
@@ -444,66 +637,14 @@ frankenphp version || echo "Note: Run 'frankenphp version' to verify"
 4. Verify installation:
    frankenphp version
 
-5. Return here to set up sites!`)
-			return m, nil
+5. Return here to set up sites!
 
-		case "back":
-			return m, func() tea.Msg {
-				return NavigateMsg{Screen: SiteCommandsScreen}
-			}
-		}
+Press any key to continue...`
+		return m, nil
 
-	case "site_setup":
-		// Check if cursor is on a field or action
-		if m.cursor < len(m.siteSetupFields) {
-			// Edit field
-			m.currentField = m.cursor
-			m.inputMode = true
-			return m, nil
-		}
-
-		actionIdx := m.cursor - len(m.siteSetupFields)
-		if actionIdx == 0 {
-			// Create Site
-			// Validate required fields
-			var missing []string
-			for _, f := range m.siteSetupFields {
-				if f.ID == "site_root" && f.Value == "" {
-					missing = append(missing, "Site Root")
-				}
-				if f.ID == "site_key" && f.Value == "" {
-					missing = append(missing, "Site Key")
-				}
-			}
-			if len(missing) > 0 {
-				m.err = fmt.Errorf("required fields missing: %s", strings.Join(missing, ", "))
-				return m, nil
-			}
-			m.mode = "confirm"
-			m.cursor = 0
-			return m, nil
-		} else {
-			// Back
-			return m, func() tea.Msg {
-				return NavigateMsg{Screen: SiteCommandsScreen}
-			}
-		}
-
-	case "confirm":
-		if m.cursor == 0 {
-			// Yes - create the site
-			cmd := m.buildCreateSiteCommand()
-			return m, func() tea.Msg {
-				return ExecutionStartMsg{
-					Command:     cmd,
-					Description: "Creating FrankenPHP site configuration",
-				}
-			}
-		} else {
-			// No - go back
-			m.mode = "site_setup"
-			m.cursor = 0
-			return m, nil
+	case "back":
+		return m, func() tea.Msg {
+			return NavigateMsg{Screen: SiteCommandsScreen}
 		}
 	}
 
@@ -513,7 +654,7 @@ frankenphp version || echo "Note: Run 'frankenphp version' to verify"
 // executeCustomURLDownload downloads FrankenPHP from a custom URL
 func (m FrankenPHPClassicModel) executeCustomURLDownload() (FrankenPHPClassicModel, tea.Cmd) {
 	url := strings.TrimSpace(m.customURL)
-	
+
 	downloadCmd := fmt.Sprintf(`#!/bin/bash
 set -e
 echo "=== FrankenPHP Download from Custom URL ==="
@@ -574,31 +715,17 @@ frankenphp version || echo "Note: Run 'frankenphp version' to verify"
 
 // buildCreateSiteCommand generates the bash script to create the site
 func (m FrankenPHPClassicModel) buildCreateSiteCommand() string {
-	var binaryPath, siteRoot, siteKey, docroot, domains, user, group string
+	// Get values from form fields
+	siteRoot := m.formSiteRoot
+	siteKey := m.formSiteKey
+	docroot := m.formDocroot
+	domains := m.formDomains
+	port := m.formPort
+	user := m.formUser
+	group := m.formGroup
 
-	for _, f := range m.siteSetupFields {
-		switch f.ID {
-		case "binary_path":
-			binaryPath = f.Value
-		case "site_root":
-			siteRoot = f.Value
-		case "site_key":
-			siteKey = f.Value
-		case "docroot":
-			docroot = f.Value
-		case "domains":
-			domains = f.Value
-		case "user":
-			user = f.Value
-		case "group":
-			group = f.Value
-		}
-	}
-
-	// Use detected binary path if not specified
-	if binaryPath == "" {
-		binaryPath = m.binaryPath
-	}
+	// Use detected binary path
+	binaryPath := m.binaryPath
 	if binaryPath == "" {
 		binaryPath = "/usr/local/bin/frankenphp"
 	}
@@ -609,6 +736,9 @@ func (m FrankenPHPClassicModel) buildCreateSiteCommand() string {
 	}
 	if domains == "" {
 		domains = siteKey + ".test"
+	}
+	if port == "" {
+		port = "8000"
 	}
 	if user == "" {
 		user = "www-data"
@@ -624,6 +754,7 @@ SITE_ROOT="%s"
 SITE_KEY="%s"
 DOCROOT="%s"
 DOMAINS="%s"
+PORT="%s"
 RUN_USER="%s"
 RUN_GROUP="%s"
 FRANKENPHP_BIN="%s"
@@ -640,6 +771,10 @@ SOCK="/run/frankenphp/${SITE_KEY}.sock"
 
 echo "Creating FrankenPHP Classic Mode site: ${SITE_KEY}"
 echo ""
+
+# Create runtime directory
+mkdir -p /run/frankenphp
+chown ${RUN_USER}:${RUN_GROUP} /run/frankenphp
 
 # Create systemd service file
 cat > "$SERVICE_FILE" <<EOF
@@ -660,8 +795,10 @@ Environment=APP_BASE_PATH=${SITE_ROOT}
 RuntimeDirectory=frankenphp
 RuntimeDirectoryMode=0755
 
+# Listen on Unix socket (preferred) with fallback port
 ExecStart=${FRANKENPHP_BIN} php-server \\
     --listen unix:${SOCK} \\
+    --listen 127.0.0.1:${PORT} \\
     --root ${DOCROOT}
 
 Restart=always
@@ -690,13 +827,37 @@ systemctl status "${SERVICE_NAME}" --no-pager || true
 
 # Generate Nginx config
 NGINX_CONF="/etc/nginx/sites-available/${SITE_KEY}.conf"
-cat > "$NGINX_CONF" <<EOF
+
+if [ -f "$NGINX_CONF" ]; then
+    echo ""
+    echo "========================================="
+    echo "⚠ Nginx config already exists!"
+    echo "========================================="
+    echo ""
+    echo "File: ${NGINX_CONF}"
+    echo ""
+    echo "Existing configuration:"
+    echo "----------------------------------------"
+    cat "$NGINX_CONF"
+    echo "----------------------------------------"
+    echo ""
+    echo "Skipping Nginx config creation to preserve existing settings."
+    echo "If you want to update it, please edit manually or delete the file first."
+else
+    cat > "$NGINX_CONF" <<EOF
+upstream frankenphp_${SITE_KEY} {
+    # Prefer Unix socket for better performance
+    server unix:${SOCK} fail_timeout=0;
+    # Fallback to TCP port
+    server 127.0.0.1:${PORT} backup;
+}
+
 server {
     listen 80;
     server_name ${DOMAINS};
 
     location / {
-        proxy_pass http://unix:${SOCK};
+        proxy_pass http://frankenphp_${SITE_KEY};
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
@@ -708,17 +869,98 @@ server {
 }
 EOF
 
-echo "✓ Created Nginx config: ${NGINX_CONF}"
+    echo "✓ Created Nginx config: ${NGINX_CONF}"
 
-# Enable site
-if [ -d /etc/nginx/sites-enabled ]; then
-    ln -sf "$NGINX_CONF" "/etc/nginx/sites-enabled/${SITE_KEY}.conf"
-    echo "✓ Enabled Nginx site"
-    
-    # Test and reload nginx
-    nginx -t && systemctl reload nginx
-    echo "✓ Nginx reloaded"
+    # Enable site
+    if [ -d /etc/nginx/sites-enabled ]; then
+        ln -sf "$NGINX_CONF" "/etc/nginx/sites-enabled/${SITE_KEY}.conf"
+        echo "✓ Enabled Nginx site"
+        
+        # Test and reload nginx
+        nginx -t && systemctl reload nginx
+        echo "✓ Nginx reloaded"
+    fi
 fi
+
+echo ""
+echo "========================================="
+echo "Creating fpcli CLI wrapper..."
+echo "========================================="
+
+# Create fpcli CLI wrapper script (FrankenPHP CLI)
+cat > /usr/local/bin/fpcli <<'FPCLI'
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Defaults that work under sudo/systemd too
+DEFAULT_HOME="/var/www"
+if [ "$(id -u)" -eq 0 ]; then
+  DEFAULT_HOME="/root"
+fi
+
+export HOME="${HOME:-$DEFAULT_HOME}"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+
+FRANKENPHP="/usr/local/bin/frankenphp"
+php_args=()
+
+# Parse php CLI flags that may appear before the script
+# We intentionally ignore -d flags like allow_url_fopen=1, memory_limit=..., etc.
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -d)
+      # ignore -d and its value
+      shift 2
+      ;;
+    -d*)
+      # ignore combined form like -dallow_url_fopen=1
+      shift
+      ;;
+    -c|-f)
+      # ignore and its value
+      shift 2
+      ;;
+    -n|-q)
+      # ignore
+      shift
+      ;;
+    -v|--version)
+      exec "$FRANKENPHP" php-cli -r 'echo PHP_VERSION, PHP_EOL;'
+      ;;
+    -m)
+      exec "$FRANKENPHP" php-cli -r 'foreach (get_loaded_extensions() as $e) echo $e, PHP_EOL;'
+      ;;
+    -i)
+      exec "$FRANKENPHP" php-cli -r 'phpinfo();'
+      ;;
+    --ini)
+      exec "$FRANKENPHP" php-cli -r 'echo "Loaded Configuration File: ", (php_ini_loaded_file() ?: "(none)"), PHP_EOL; echo "Scan this dir for additional .ini files: ", (php_ini_scanned_files() ? dirname(explode(",", php_ini_scanned_files())[0]) : "(none)"), PHP_EOL;'
+      ;;
+    -r)
+      shift
+      exec "$FRANKENPHP" php-cli "${php_args[@]}" -r "${1-}"
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      # pass unknown flags through (best effort)
+      php_args+=("$1")
+      shift
+      ;;
+    *)
+      # first non-flag is script (artisan, composer.phar, file.php)
+      break
+      ;;
+  esac
+done
+
+exec "$FRANKENPHP" php-cli "${php_args[@]}" "$@"
+FPCLI
+
+chmod +x /usr/local/bin/fpcli
+echo "✓ Created /usr/local/bin/fpcli (FrankenPHP CLI wrapper)"
 
 echo ""
 echo "========================================="
@@ -727,13 +969,291 @@ echo "========================================="
 echo ""
 echo "Service: ${SERVICE_NAME}"
 echo "Socket: ${SOCK}"
+echo "Port: 127.0.0.1:${PORT} (fallback)"
 echo "Nginx: ${NGINX_CONF}"
+echo "CLI: /usr/local/bin/fpcli"
 echo ""
 echo "Commands:"
 echo "  systemctl status ${SERVICE_NAME}"
 echo "  journalctl -u ${SERVICE_NAME} -f"
+echo "  fpcli -v  (PHP version via FrankenPHP)"
 echo ""
-`, siteRoot, siteKey, docroot, domains, user, group, binaryPath)
+`, siteRoot, siteKey, docroot, domains, port, user, group, binaryPath)
+}
+
+// executeWithComposerSetup runs the site creation with the selected composer option
+func (m FrankenPHPClassicModel) executeWithComposerSetup() (tea.Model, tea.Cmd) {
+	// Get the base site creation command
+	siteCmd := m.buildCreateSiteCommand()
+
+	// Get the selected composer option
+	option := m.composerOptions[m.composerCursor]
+
+	var composerCmd string
+	switch option.ID {
+	case "option_a":
+		// Option A: Replace system PHP with fpcli symlink
+		composerCmd = `
+echo ""
+echo "========================================="
+echo "Setting up Composer with FrankenPHP..."
+echo "========================================="
+echo ""
+echo "Option A: Creating PHP symlink to fpcli"
+echo ""
+
+# Backup existing php if it exists and is not a symlink
+if [ -f /usr/local/bin/php ] && [ ! -L /usr/local/bin/php ]; then
+    echo "Backing up existing /usr/local/bin/php to /usr/local/bin/php.bak"
+    mv /usr/local/bin/php /usr/local/bin/php.bak
+fi
+
+# Create symlink
+ln -sf /usr/local/bin/fpcli /usr/local/bin/php
+hash -r 2>/dev/null || true
+
+echo "✓ Created symlink: /usr/local/bin/php -> /usr/local/bin/fpcli"
+echo ""
+echo "Verification:"
+which php
+php -v
+echo ""
+echo "✓ Composer will now use FrankenPHP automatically!"
+echo ""
+echo "Note: System PHP (if installed) is still available at /usr/bin/php"
+`
+	case "option_both":
+		// Option A+C: Both PHP symlink and Composer wrapper
+		composerCmd = `
+echo ""
+echo "========================================="
+echo "Setting up Composer with FrankenPHP..."
+echo "========================================="
+echo ""
+echo "Option A+C: Creating PHP symlink AND Composer wrapper"
+echo ""
+
+# === Part 1: Create PHP symlink (Option A) ===
+echo "[1/2] Creating PHP symlink..."
+
+# Backup existing php if it exists and is not a symlink
+if [ -f /usr/local/bin/php ] && [ ! -L /usr/local/bin/php ]; then
+    echo "  Backing up existing /usr/local/bin/php to /usr/local/bin/php.bak"
+    mv /usr/local/bin/php /usr/local/bin/php.bak
+fi
+
+# Create symlink
+ln -sf /usr/local/bin/fpcli /usr/local/bin/php
+echo "  ✓ Created symlink: /usr/local/bin/php -> /usr/local/bin/fpcli"
+
+# === Part 2: Create Composer wrapper (Option C) ===
+echo ""
+echo "[2/2] Setting up Composer wrapper..."
+
+# Check if composer.phar already exists at expected location
+if [ -f /usr/local/bin/composer.phar ]; then
+    echo "  ✓ composer.phar already exists at /usr/local/bin/composer.phar"
+else
+    echo "  Downloading Composer..."
+    
+    # Download composer installer
+    cd /tmp
+    curl -sS https://getcomposer.org/installer -o composer-setup.php
+    
+    if [ ! -f composer-setup.php ]; then
+        echo "  Error: Failed to download composer installer"
+        exit 1
+    fi
+    
+    # Run installer with fpcli
+    /usr/local/bin/fpcli composer-setup.php --install-dir=/usr/local/bin --filename=composer.phar
+    
+    # Clean up installer
+    rm -f composer-setup.php
+    
+    # Verify download
+    if [ -f /usr/local/bin/composer.phar ]; then
+        echo "  ✓ Composer downloaded to /usr/local/bin/composer.phar"
+    else
+        echo "  Trying alternative download method..."
+        curl -sS https://getcomposer.org/download/latest-stable/composer.phar -o /usr/local/bin/composer.phar
+        
+        if [ ! -f /usr/local/bin/composer.phar ]; then
+            echo "  Error: All download methods failed"
+            exit 1
+        fi
+        echo "  ✓ Composer downloaded via direct download"
+    fi
+fi
+
+# Make sure composer.phar is executable
+chmod +x /usr/local/bin/composer.phar
+
+# Create wrapper script
+cat > /usr/local/bin/composer <<'COMPOSERWRAP'
+#!/usr/bin/env bash
+set -euo pipefail
+
+export HOME="${HOME:-/root}"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+
+# CRITICAL: make Composer scripts (@php) use our php shim
+export PHP_BINARY="/usr/local/bin/php"
+
+exec /usr/local/bin/fpcli /usr/local/bin/composer.phar "$@"
+COMPOSERWRAP
+
+chmod +x /usr/local/bin/composer
+echo "  ✓ Created composer wrapper at /usr/local/bin/composer"
+
+# Update PATH hash
+hash -r 2>/dev/null || true
+
+echo ""
+echo "========================================="
+echo "Verification:"
+echo "========================================="
+echo ""
+echo "PHP:"
+which php
+php -v | head -1
+echo ""
+echo "Composer:"
+which composer
+composer --version
+echo ""
+echo "✓ Full FrankenPHP integration complete!"
+echo ""
+echo "Both 'php' and 'composer' commands now use FrankenPHP."
+echo "Laravel @php scripts will work correctly."
+`
+	case "option_c":
+		// Option C: Create composer wrapper
+		composerCmd = `
+echo ""
+echo "========================================="
+echo "Setting up Composer with FrankenPHP..."
+echo "========================================="
+echo ""
+echo "Option C: Creating Composer wrapper"
+echo ""
+
+# Check if composer.phar already exists at expected location
+if [ -f /usr/local/bin/composer.phar ]; then
+    echo "✓ composer.phar already exists at /usr/local/bin/composer.phar"
+else
+    echo "Downloading Composer..."
+    echo ""
+    
+    # Download composer installer
+    cd /tmp
+    curl -sS https://getcomposer.org/installer -o composer-setup.php
+    
+    if [ ! -f composer-setup.php ]; then
+        echo "Error: Failed to download composer installer"
+        exit 1
+    fi
+    
+    # Run installer with fpcli
+    echo "Running composer installer with FrankenPHP..."
+    /usr/local/bin/fpcli composer-setup.php --install-dir=/usr/local/bin --filename=composer.phar
+    
+    # Clean up installer
+    rm -f composer-setup.php
+    
+    # Verify download
+    if [ -f /usr/local/bin/composer.phar ]; then
+        echo "✓ Composer downloaded to /usr/local/bin/composer.phar"
+    else
+        echo "Error: Composer installation failed"
+        echo "Trying alternative download method..."
+        
+        # Alternative: download phar directly
+        curl -sS https://getcomposer.org/download/latest-stable/composer.phar -o /usr/local/bin/composer.phar
+        
+        if [ ! -f /usr/local/bin/composer.phar ]; then
+            echo "Error: All download methods failed"
+            exit 1
+        fi
+        echo "✓ Composer downloaded via direct download"
+    fi
+fi
+
+# Make sure composer.phar is executable
+chmod +x /usr/local/bin/composer.phar
+
+# Verify composer.phar exists
+echo ""
+echo "Verifying composer.phar..."
+ls -la /usr/local/bin/composer.phar
+
+# Test that composer.phar works with fpcli
+echo ""
+echo "Testing composer.phar with fpcli..."
+/usr/local/bin/fpcli /usr/local/bin/composer.phar --version
+if [ $? -ne 0 ]; then
+    echo "Warning: composer.phar test returned non-zero, but may still work"
+fi
+
+# Create wrapper script
+echo ""
+echo "Creating composer wrapper script..."
+cat > /usr/local/bin/composer <<'COMPOSERWRAP'
+#!/usr/bin/env bash
+set -euo pipefail
+
+export HOME="${HOME:-/root}"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+
+# CRITICAL: make Composer scripts (@php) use our php shim
+export PHP_BINARY="/usr/local/bin/php"
+
+exec /usr/local/bin/fpcli /usr/local/bin/composer.phar "$@"
+COMPOSERWRAP
+
+chmod +x /usr/local/bin/composer
+echo "✓ Created composer wrapper at /usr/local/bin/composer"
+
+# Update PATH hash
+hash -r 2>/dev/null || true
+
+echo ""
+echo "Final verification:"
+echo "  composer location: $(which composer)"
+echo "  composer.phar location: /usr/local/bin/composer.phar"
+echo ""
+composer --version
+echo ""
+echo "✓ Composer now runs through FrankenPHP!"
+`
+	case "skip":
+		composerCmd = `
+echo ""
+echo "========================================="
+echo "Skipping Composer setup"
+echo "========================================="
+echo ""
+echo "You can configure Composer manually later:"
+echo ""
+echo "Option A - Replace PHP:"
+echo "  sudo ln -sf /usr/local/bin/fpcli /usr/local/bin/php"
+echo ""
+echo "Option C - Wrap Composer:"
+echo "  sudo mv /usr/local/bin/composer /usr/local/bin/composer.phar"
+echo "  # Then create wrapper script (see docs)"
+echo ""
+`
+	}
+
+	// Combine site creation and composer setup
+	fullCmd := siteCmd + composerCmd
+
+	return m, func() tea.Msg {
+		return ExecutionStartMsg{
+			Command:     fullCmd,
+			Description: "Creating FrankenPHP site and configuring Composer",
+		}
+	}
 }
 
 // View renders the FrankenPHP Classic Mode screen
@@ -751,6 +1271,8 @@ func (m FrankenPHPClassicModel) View() string {
 		return m.viewSiteSetup()
 	case "confirm":
 		return m.viewConfirm()
+	case "composer_setup":
+		return m.viewComposerSetup()
 	}
 
 	return "Unknown mode"
@@ -784,6 +1306,15 @@ func (m FrankenPHPClassicModel) viewCustomURLInput() string {
 
 // viewInstallOptions renders the installation options view
 func (m FrankenPHPClassicModel) viewInstallOptions() string {
+	// Handle message display (e.g., manual installation instructions)
+	if m.message != "" {
+		header := m.theme.Title.Render("FrankenPHP Classic Mode")
+		messageBox := m.theme.InfoStyle.Render(m.message)
+		content := lipgloss.JoinVertical(lipgloss.Left, header, "", messageBox)
+		bordered := m.theme.BorderStyle.Render(content)
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
+	}
+
 	header := m.theme.Title.Render("FrankenPHP Classic Mode")
 
 	// Warning that binary not found
@@ -821,10 +1352,10 @@ func (m FrankenPHPClassicModel) viewInstallOptions() string {
 
 	menu := lipgloss.JoinVertical(lipgloss.Left, items...)
 
-	// Error message (used for showing instructions)
+	// Error message
 	messageSection := ""
 	if m.err != nil {
-		messageSection = m.theme.InfoStyle.Render(m.err.Error())
+		messageSection = m.theme.ErrorStyle.Render(m.err.Error())
 	}
 
 	help := m.theme.Help.Render("↑/↓: Navigate • Enter: Select • Esc: Back • q: Quit")
@@ -840,8 +1371,18 @@ func (m FrankenPHPClassicModel) viewInstallOptions() string {
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
 }
 
-// viewSiteSetup renders the site setup view
+// viewSiteSetup renders the site setup view with huh form
 func (m FrankenPHPClassicModel) viewSiteSetup() string {
+	// Handle message display
+	if m.message != "" {
+		header := m.theme.Title.Render("FrankenPHP Classic Mode")
+		messageBox := m.theme.InfoStyle.Render(m.message)
+		help := m.theme.Help.Render("Press any key to continue...")
+		content := lipgloss.JoinVertical(lipgloss.Left, header, "", messageBox, "", help)
+		bordered := m.theme.BorderStyle.Render(content)
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
+	}
+
 	header := m.theme.Title.Render("FrankenPHP Classic Mode - Site Setup")
 
 	// Binary info
@@ -852,87 +1393,24 @@ func (m FrankenPHPClassicModel) viewSiteSetup() string {
 	)
 
 	// Architecture description
-	archInfo := m.theme.DescriptionStyle.Render("Creates: systemd service + Nginx vhost + Unix socket for each site")
+	archInfo := m.theme.DescriptionStyle.Render("Creates: systemd service + Nginx vhost + Unix socket + TCP port fallback")
 
-	// Form fields
-	var fieldItems []string
-	fieldItems = append(fieldItems, "")
-	fieldItems = append(fieldItems, m.theme.Subtitle.Render("Site Configuration:"))
-	fieldItems = append(fieldItems, "")
-
-	for i, field := range m.siteSetupFields {
-		cursor := "  "
-		if i == m.cursor {
-			cursor = m.theme.KeyStyle.Render("▶ ")
-		}
-
-		label := field.Label + ": "
-		value := field.Value
-		if value == "" {
-			value = field.Placeholder
-		}
-
-		var renderedField string
-		if i == m.cursor {
-			if m.inputMode && i == m.currentField {
-				// Editing mode
-				renderedField = m.theme.SelectedItem.Render(fmt.Sprintf("%s%s", cursor, label)) +
-					m.theme.SelectedItem.Render(field.Value+"_")
-			} else {
-				renderedField = m.theme.SelectedItem.Render(fmt.Sprintf("%s%s", cursor, label)) +
-					m.theme.InfoStyle.Render(value)
-			}
-			fieldItems = append(fieldItems, renderedField)
-			fieldItems = append(fieldItems, "    "+m.theme.DescriptionStyle.Render(field.Description))
-			fieldItems = append(fieldItems, "    "+m.theme.KeyStyle.Render("Press Enter or 'e' to edit"))
-		} else {
-			valueStyle := m.theme.DescriptionStyle
-			if field.Value != "" {
-				valueStyle = m.theme.InfoStyle
-			}
-			renderedField = m.theme.MenuItem.Render(fmt.Sprintf("%s%s", cursor, label)) +
-				valueStyle.Render(value)
-			fieldItems = append(fieldItems, renderedField)
-		}
+	// Render the huh form
+	formView := ""
+	if m.form != nil {
+		formView = m.form.View()
 	}
-
-	// Actions
-	fieldItems = append(fieldItems, "")
-	actions := []string{"Create Site", "← Back"}
-	for i, action := range actions {
-		actualIdx := len(m.siteSetupFields) + i
-		cursor := "  "
-		if actualIdx == m.cursor {
-			cursor = m.theme.KeyStyle.Render("▶ ")
-		}
-
-		var renderedItem string
-		if actualIdx == m.cursor {
-			if i == 0 {
-				renderedItem = m.theme.SuccessStyle.Render(fmt.Sprintf("%s%s", cursor, action))
-			} else {
-				renderedItem = m.theme.SelectedItem.Render(fmt.Sprintf("%s%s", cursor, action))
-			}
-		} else {
-			renderedItem = m.theme.MenuItem.Render(fmt.Sprintf("%s%s", cursor, action))
-		}
-		fieldItems = append(fieldItems, renderedItem)
-	}
-
-	form := lipgloss.JoinVertical(lipgloss.Left, fieldItems...)
 
 	// Error message
 	messageSection := ""
 	if m.err != nil {
 		messageSection = m.theme.ErrorStyle.Render(fmt.Sprintf("Error: %v", m.err))
 	}
-	if m.success != "" {
-		messageSection = m.theme.SuccessStyle.Render(m.success)
-	}
 
-	help := m.theme.Help.Render("↑/↓: Navigate • Enter/e: Edit • Tab: Next field • Esc: Back")
+	// Help text with keyboard shortcuts
+	help := m.theme.Help.Render("Tab: Next field • Shift+Tab: Previous • Enter: Submit • Esc: Cancel")
 
-	sections := []string{header, "", binaryInfo, "", archInfo, form}
+	sections := []string{header, "", binaryInfo, "", archInfo, "", formView}
 	if messageSection != "" {
 		sections = append(sections, "", messageSection)
 	}
@@ -947,31 +1425,48 @@ func (m FrankenPHPClassicModel) viewSiteSetup() string {
 func (m FrankenPHPClassicModel) viewConfirm() string {
 	header := m.theme.Title.Render("Confirm Site Creation")
 
-	// Show summary
+	// Show summary of form values
 	var summary []string
 	summary = append(summary, m.theme.Subtitle.Render("Site Configuration Summary:"))
 	summary = append(summary, "")
 
-	for _, f := range m.siteSetupFields {
-		if f.Value != "" {
-			summary = append(summary, m.theme.Label.Render(f.Label+": ")+m.theme.InfoStyle.Render(f.Value))
-		}
+	// Display all form field values
+	if m.formSiteRoot != "" {
+		summary = append(summary, m.theme.Label.Render("Site Root: ")+m.theme.InfoStyle.Render(m.formSiteRoot))
+	}
+	if m.formSiteKey != "" {
+		summary = append(summary, m.theme.Label.Render("Site Key: ")+m.theme.InfoStyle.Render(m.formSiteKey))
+	}
+	if m.formDocroot != "" {
+		summary = append(summary, m.theme.Label.Render("Document Root: ")+m.theme.InfoStyle.Render(m.formDocroot))
+	}
+	if m.formDomains != "" {
+		summary = append(summary, m.theme.Label.Render("Domain Names: ")+m.theme.InfoStyle.Render(m.formDomains))
+	}
+	if m.formPort != "" {
+		summary = append(summary, m.theme.Label.Render("Port: ")+m.theme.InfoStyle.Render(m.formPort))
+	}
+	if m.formUser != "" {
+		summary = append(summary, m.theme.Label.Render("Run as User: ")+m.theme.InfoStyle.Render(m.formUser))
+	}
+	if m.formGroup != "" {
+		summary = append(summary, m.theme.Label.Render("Run as Group: ")+m.theme.InfoStyle.Render(m.formGroup))
 	}
 
 	// What will be created
-	siteKey := ""
-	for _, f := range m.siteSetupFields {
-		if f.ID == "site_key" {
-			siteKey = f.Value
-			break
-		}
+	siteKey := m.formSiteKey
+	port := m.formPort
+	if port == "" {
+		port = "8000"
 	}
 
 	summary = append(summary, "")
 	summary = append(summary, m.theme.Subtitle.Render("Will create:"))
 	summary = append(summary, m.theme.DescriptionStyle.Render(fmt.Sprintf("  • /etc/systemd/system/frankenphp-%s.service", siteKey)))
 	summary = append(summary, m.theme.DescriptionStyle.Render(fmt.Sprintf("  • /etc/nginx/sites-available/%s.conf", siteKey)))
-	summary = append(summary, m.theme.DescriptionStyle.Render(fmt.Sprintf("  • /run/frankenphp/%s.sock (runtime)", siteKey)))
+	summary = append(summary, m.theme.DescriptionStyle.Render(fmt.Sprintf("  • /run/frankenphp/%s.sock (Unix socket)", siteKey)))
+	summary = append(summary, m.theme.DescriptionStyle.Render(fmt.Sprintf("  • 127.0.0.1:%s (TCP fallback)", port)))
+	summary = append(summary, m.theme.DescriptionStyle.Render("  • /usr/local/bin/fpcli (FrankenPHP CLI wrapper)"))
 
 	summarySection := lipgloss.JoinVertical(lipgloss.Left, summary...)
 
@@ -1003,6 +1498,87 @@ func (m FrankenPHPClassicModel) viewConfirm() string {
 	help := m.theme.Help.Render("↑/↓: Navigate • Enter: Confirm • Esc: Back")
 
 	content := lipgloss.JoinVertical(lipgloss.Left, header, "", summarySection, optionsSection, "", help)
+	bordered := m.theme.BorderStyle.Render(content)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
+}
+
+// viewComposerSetup renders the composer setup options view
+func (m FrankenPHPClassicModel) viewComposerSetup() string {
+	header := m.theme.Title.Render("Composer Setup with FrankenPHP")
+
+	description := lipgloss.JoinVertical(lipgloss.Left,
+		m.theme.DescriptionStyle.Render("Configure how Composer should use FrankenPHP's PHP."),
+		"",
+		m.theme.InfoStyle.Render("The fpcli CLI wrapper will be created at /usr/local/bin/fpcli"),
+		m.theme.InfoStyle.Render("Choose how you want Composer to integrate with it:"),
+	)
+
+	// Options
+	var items []string
+	items = append(items, "")
+
+	for i, opt := range m.composerOptions {
+		cursor := "  "
+		if i == m.composerCursor {
+			cursor = m.theme.KeyStyle.Render("▶ ")
+		}
+
+		var renderedItem string
+		if i == m.composerCursor {
+			renderedItem = m.theme.SelectedItem.Render(fmt.Sprintf("%s%s", cursor, opt.Name))
+		} else {
+			renderedItem = m.theme.MenuItem.Render(fmt.Sprintf("%s%s", cursor, opt.Name))
+		}
+		items = append(items, renderedItem)
+
+		if i == m.composerCursor && opt.Description != "" {
+			items = append(items, "    "+m.theme.DescriptionStyle.Render(opt.Description))
+		}
+		items = append(items, "")
+	}
+
+	menu := lipgloss.JoinVertical(lipgloss.Left, items...)
+
+	// Additional info based on selection
+	var infoSection string
+	if m.composerCursor < len(m.composerOptions) {
+		opt := m.composerOptions[m.composerCursor]
+		switch opt.ID {
+		case "option_a":
+			infoSection = lipgloss.JoinVertical(lipgloss.Left,
+				m.theme.Subtitle.Render("What this does:"),
+				m.theme.DescriptionStyle.Render("  • Creates symlink: /usr/local/bin/php → /usr/local/bin/fpcli"),
+				m.theme.DescriptionStyle.Render("  • Composer automatically uses 'php' from PATH"),
+				m.theme.DescriptionStyle.Render("  • Laravel @php scripts will work"),
+				m.theme.DescriptionStyle.Render("  • System PHP still available at /usr/bin/php"),
+			)
+		case "option_both":
+			infoSection = lipgloss.JoinVertical(lipgloss.Left,
+				m.theme.Subtitle.Render("What this does:"),
+				m.theme.SuccessStyle.Render("  ✓ Best option for Laravel/Symfony projects"),
+				m.theme.DescriptionStyle.Render("  • Creates PHP symlink (php → fpcli)"),
+				m.theme.DescriptionStyle.Render("  • Downloads & wraps Composer"),
+				m.theme.DescriptionStyle.Render("  • Full compatibility with @php scripts"),
+			)
+		case "option_c":
+			infoSection = lipgloss.JoinVertical(lipgloss.Left,
+				m.theme.Subtitle.Render("What this does:"),
+				m.theme.DescriptionStyle.Render("  • Downloads composer.phar"),
+				m.theme.DescriptionStyle.Render("  • Creates wrapper script that uses fpcli"),
+				m.theme.WarningStyle.Render("  ⚠ Laravel @php scripts won't work"),
+			)
+		}
+	}
+
+	help := m.theme.Help.Render("↑/↓: Navigate • Enter: Select • Esc: Back")
+
+	sections := []string{header, "", description, menu}
+	if infoSection != "" {
+		sections = append(sections, infoSection)
+	}
+	sections = append(sections, "", help)
+
+	content := lipgloss.JoinVertical(lipgloss.Left, sections...)
 	bordered := m.theme.BorderStyle.Render(content)
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
 }
