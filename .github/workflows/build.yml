@@ -17,7 +17,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.21'
+        go-version: '1.24'
 
     - name: Download dependencies
       run: go mod download
@@ -55,7 +55,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.21'
+        go-version: '1.24'
 
     - name: Build
       env:
@@ -84,7 +84,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.21'
+        go-version: '1.24'
 
     - name: Build Docker test image
       run: docker build -t ravact-test -f Dockerfile.test .
