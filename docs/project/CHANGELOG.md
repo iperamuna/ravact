@@ -2,7 +2,7 @@
 
 [← Back to Documentation](../README.md)
 
-## [0.3.2] - 2026-01-30
+## [0.3.5] - 2026-01-31
 
 ### Added
 - **FrankenPHP Service Management Enhancements**
