@@ -12,12 +12,13 @@ import (
 
 // NginxSite represents an Nginx site configuration
 type NginxSite struct {
-	Name      string
-	Domain    string
-	RootDir   string
-	IsEnabled bool
-	HasSSL    bool
+	Name       string
+	Domain     string
+	RootDir    string
+	IsEnabled  bool
+	HasSSL     bool
 	ConfigPath string
+	HasPHP     bool
 }
 
 // NginxTemplate represents a site template from JSON
@@ -110,7 +111,7 @@ func (nm *NginxManager) GetAllSites() ([]NginxSite, error) {
 		}
 
 		configPath := filepath.Join(nm.sitesAvailable, name)
-		
+
 		// Check if enabled (symlink exists)
 		isEnabled := false
 		enabledPath := filepath.Join(nm.sitesEnabled, name)
@@ -119,7 +120,7 @@ func (nm *NginxManager) GetAllSites() ([]NginxSite, error) {
 		}
 
 		// Parse config to get details
-		domain, rootDir, hasSSL := nm.parseConfig(configPath)
+		domain, rootDir, hasSSL, hasPHP := nm.parseConfig(configPath)
 
 		site := NginxSite{
 			Name:       name,
@@ -128,6 +129,7 @@ func (nm *NginxManager) GetAllSites() ([]NginxSite, error) {
 			IsEnabled:  isEnabled,
 			HasSSL:     hasSSL,
 			ConfigPath: configPath,
+			HasPHP:     hasPHP,
 		}
 
 		sites = append(sites, site)
@@ -137,10 +139,10 @@ func (nm *NginxManager) GetAllSites() ([]NginxSite, error) {
 }
 
 // parseConfig extracts basic info from nginx config
-func (nm *NginxManager) parseConfig(configPath string) (domain, rootDir string, hasSSL bool) {
+func (nm *NginxManager) parseConfig(configPath string) (domain, rootDir string, hasSSL, hasPHP bool) {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		return "", "", false
+		return "", "", false, false
 	}
 
 	content := string(data)
@@ -148,7 +150,7 @@ func (nm *NginxManager) parseConfig(configPath string) (domain, rootDir string, 
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		
+
 		// Extract server_name
 		if strings.HasPrefix(line, "server_name") {
 			parts := strings.Fields(line)
@@ -156,7 +158,7 @@ func (nm *NginxManager) parseConfig(configPath string) (domain, rootDir string, 
 				domain = strings.TrimSuffix(parts[1], ";")
 			}
 		}
-		
+
 		// Extract root
 		if strings.HasPrefix(line, "root ") {
 			parts := strings.Fields(line)
@@ -164,14 +166,14 @@ func (nm *NginxManager) parseConfig(configPath string) (domain, rootDir string, 
 				rootDir = strings.TrimSuffix(parts[1], ";")
 			}
 		}
-		
-		// Check for SSL
-		if strings.Contains(line, "listen 443") || strings.Contains(line, "ssl_certificate") {
-			hasSSL = true
+
+		// Check for PHP or fastcgi
+		if strings.Contains(line, "fastcgi_pass") || strings.Contains(line, "proxy_pass") && strings.Contains(line, "unix:") || strings.Contains(line, ".php") {
+			hasPHP = true
 		}
 	}
 
-	return domain, rootDir, hasSSL
+	return domain, rootDir, hasSSL, hasPHP
 }
 
 // EnableSite enables a site by creating symlink
@@ -208,7 +210,7 @@ func (nm *NginxManager) DisableSite(siteName string) error {
 func (nm *NginxManager) TestConfig() error {
 	cmd := exec.Command("nginx", "-t")
 	output, err := cmd.CombinedOutput()
-	
+
 	if err != nil {
 		return fmt.Errorf("nginx config test failed: %s", string(output))
 	}
@@ -453,7 +455,7 @@ func (nm *NginxManager) DeleteSite(siteName string) error {
 func (nm *NginxManager) ObtainSSLCertificate(domain string) error {
 	cmd := exec.Command("certbot", "--nginx", "-d", domain, "--non-interactive", "--agree-tos", "--email", "admin@"+domain)
 	output, err := cmd.CombinedOutput()
-	
+
 	if err != nil {
 		return fmt.Errorf("certbot failed: %s", string(output))
 	}
@@ -464,32 +466,32 @@ func (nm *NginxManager) ObtainSSLCertificate(domain string) error {
 // AddSSLManual adds manual SSL certificates to a site
 func (nm *NginxManager) AddSSLManual(siteName, certPath, keyPath, chainPath string) error {
 	configPath := filepath.Join(nm.sitesAvailable, siteName)
-	
+
 	// Read existing config
 	content, err := os.ReadFile(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to read site config: %w", err)
 	}
-	
+
 	config := string(content)
-	
+
 	// Check if already has SSL
 	if strings.Contains(config, "ssl_certificate") {
 		return fmt.Errorf("site already has SSL configured")
 	}
-	
+
 	// Find server block and add SSL directives
 	// Add listen 443 ssl
 	config = strings.Replace(config, "listen 80;", "listen 80;\n    listen 443 ssl;", 1)
 	config = strings.Replace(config, "listen [::]:80;", "listen [::]:80;\n    listen [::]:443 ssl;", 1)
-	
+
 	// Add SSL certificate paths after server_name
 	sslDirectives := fmt.Sprintf("\n\n    # SSL Configuration\n    ssl_certificate %s;\n    ssl_certificate_key %s;", certPath, keyPath)
 	if chainPath != "" {
 		sslDirectives += fmt.Sprintf("\n    ssl_trusted_certificate %s;", chainPath)
 	}
 	sslDirectives += "\n    ssl_protocols TLSv1.2 TLSv1.3;\n    ssl_ciphers HIGH:!aNULL:!MD5;\n    ssl_prefer_server_ciphers on;"
-	
+
 	// Insert after server_name line
 	lines := strings.Split(config, "\n")
 	var newLines []string
@@ -500,46 +502,46 @@ func (nm *NginxManager) AddSSLManual(siteName, certPath, keyPath, chainPath stri
 		}
 	}
 	config = strings.Join(newLines, "\n")
-	
+
 	// Write updated config
 	err = os.WriteFile(configPath, []byte(config), 0644)
 	if err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
-	
+
 	return nil
 }
 
 // RemoveSSL removes SSL configuration from a site
 func (nm *NginxManager) RemoveSSL(siteName string) error {
 	configPath := filepath.Join(nm.sitesAvailable, siteName)
-	
+
 	// Read existing config
 	content, err := os.ReadFile(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to read site config: %w", err)
 	}
-	
+
 	config := string(content)
-	
+
 	// Remove SSL listen directives
 	config = strings.ReplaceAll(config, "listen 443 ssl;", "")
 	config = strings.ReplaceAll(config, "listen [::]:443 ssl;", "")
-	
+
 	// Remove SSL certificate directives
 	lines := strings.Split(config, "\n")
 	var newLines []string
 	skipSSLBlock := false
-	
+
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		
+
 		// Skip SSL configuration lines
 		if strings.HasPrefix(trimmed, "# SSL Configuration") {
 			skipSSLBlock = true
 			continue
 		}
-		
+
 		if skipSSLBlock {
 			if strings.HasPrefix(trimmed, "ssl_") {
 				continue
@@ -547,7 +549,7 @@ func (nm *NginxManager) RemoveSSL(siteName string) error {
 				skipSSLBlock = false
 			}
 		}
-		
+
 		// Skip individual SSL directives
 		if strings.HasPrefix(trimmed, "ssl_certificate") ||
 			strings.HasPrefix(trimmed, "ssl_protocols") ||
@@ -556,20 +558,20 @@ func (nm *NginxManager) RemoveSSL(siteName string) error {
 			strings.HasPrefix(trimmed, "ssl_trusted_certificate") {
 			continue
 		}
-		
+
 		newLines = append(newLines, line)
 	}
-	
+
 	config = strings.Join(newLines, "\n")
-	
+
 	// Clean up extra blank lines
 	config = strings.ReplaceAll(config, "\n\n\n", "\n\n")
-	
+
 	// Write updated config
 	err = os.WriteFile(configPath, []byte(config), 0644)
 	if err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
-	
+
 	return nil
 }

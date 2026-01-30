@@ -367,7 +367,7 @@ func (m PHPExtensionsModel) viewVersionSelect() string {
 			"",
 			m.theme.Help.Render("Esc: Back • q: Quit"),
 		)
-		bordered := m.theme.BorderStyle.Render(content)
+		bordered := m.theme.RenderBox(content)
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
 	}
 
@@ -396,7 +396,7 @@ func (m PHPExtensionsModel) viewVersionSelect() string {
 	help := m.theme.Help.Render("↑/↓: Navigate • Enter: Select • Esc: Back • q: Quit")
 
 	content := lipgloss.JoinVertical(lipgloss.Left, header, "", menu, "", help)
-	bordered := m.theme.BorderStyle.Render(content)
+	bordered := m.theme.RenderBox(content)
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
 }
 
@@ -497,7 +497,7 @@ func (m PHPExtensionsModel) viewExtensions() string {
 	sections = append(sections, "", help)
 
 	content := lipgloss.JoinVertical(lipgloss.Left, sections...)
-	bordered := m.theme.BorderStyle.Render(content)
+	bordered := m.theme.RenderBox(content)
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
 }
 
@@ -536,6 +536,6 @@ func (m PHPExtensionsModel) viewConfirm() string {
 	help := m.theme.Help.Render("↑/↓: Navigate • Enter: Confirm • Esc: Back")
 
 	content := lipgloss.JoinVertical(lipgloss.Left, header, "", info, menu, "", help)
-	bordered := m.theme.BorderStyle.Render(content)
+	bordered := m.theme.RenderBox(content)
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
 }

@@ -107,7 +107,7 @@ func (m TextDisplayModel) View() string {
 	sections = append(sections, help)
 
 	contentSection := lipgloss.JoinVertical(lipgloss.Left, sections...)
-	bordered := m.theme.BorderStyle.Render(contentSection)
+	bordered := m.theme.RenderBox(contentSection)
 
 	return lipgloss.Place(
 		m.width,

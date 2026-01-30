@@ -149,7 +149,7 @@ func (m RedisPortModel) View() string {
 		msg := m.theme.SuccessStyle.Render(m.theme.Symbols.CheckMark + " Redis port changed successfully!")
 		help := m.theme.Help.Render("Press any key to continue...")
 		content := lipgloss.JoinVertical(lipgloss.Center, "", msg, "", help)
-		bordered := m.theme.BorderStyle.Render(content)
+		bordered := m.theme.RenderBox(content)
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
 	}
 
@@ -158,7 +158,7 @@ func (m RedisPortModel) View() string {
 		msg := m.theme.ErrorStyle.Render(m.theme.Symbols.CrossMark + " Error: " + m.err.Error())
 		help := m.theme.Help.Render("Press any key to continue...")
 		content := lipgloss.JoinVertical(lipgloss.Center, "", msg, "", help)
-		bordered := m.theme.BorderStyle.Render(content)
+		bordered := m.theme.RenderBox(content)
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
 	}
 
@@ -189,7 +189,7 @@ func (m RedisPortModel) View() string {
 	)
 
 	// Add border and center
-	bordered := m.theme.BorderStyle.Render(content)
+	bordered := m.theme.RenderBox(content)
 
 	return lipgloss.Place(
 		m.width,

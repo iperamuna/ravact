@@ -5,12 +5,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/iperamuna/ravact/internal/stubs"
+	"github.com/iperamuna/ravact/internal/system"
 	"github.com/iperamuna/ravact/internal/ui/theme"
 )
 
@@ -20,7 +23,7 @@ type FrankenPHPClassicModel struct {
 	width         int
 	height        int
 	cursor        int
-	mode          string // "install_options", "site_setup", "confirm", "custom_url_input", "composer_setup"
+	mode          string // "install_options", "site_setup", "confirm", "review_files", "custom_url_input", "composer_setup"
 	binaryPath    string
 	binaryVersion string
 	binaryFound   bool
@@ -42,14 +45,44 @@ type FrankenPHPClassicModel struct {
 	formPort        string
 	formUser        string
 	formGroup       string
+	formNumThreads  string
+	formMaxThreads  string
+	formMaxWaitTime string
+
+	// PHP INI fields
+	formPHPMemoryLimit              string
+	formPHPMaxExecutionTime         string
+	formPHPOpcacheEnable            bool
+	formPHPOpcacheEnableCli         bool
+	formPHPOpcacheMemoryConsumption string
+	formPHPOpcacheInternedStrings   string
+	formPHPOpcacheMaxFiles          string
+	formPHPOpcacheValidate          bool
+	formPHPOpcacheRevalidateFreq    string
+	formPHPOpcacheJit               bool
+	formPHPOpcacheJitBufferSize     string
+	formPHPRealpathCacheSize        string
+	formPHPRealpathCacheTtl         string
 
 	// Composer setup options
 	composerOptions []ComposerSetupOption
 	composerCursor  int
 
+	// Review files state
+	generatedFiles []GeneratedFile
+	fileCursor     int
+
 	// UI state
-	err     error
-	message string
+	detector *system.Detector
+	err      error
+	message  string
+}
+
+// GeneratedFile represents a config file to be reviewed
+type GeneratedFile struct {
+	Path    string
+	Content string
+	Name    string
 }
 
 // ComposerSetupOption represents a composer setup option
@@ -69,6 +102,20 @@ type FrankenPHPInstallOption struct {
 // NewFrankenPHPClassicModel creates a new FrankenPHP Classic Mode model
 func NewFrankenPHPClassicModel() FrankenPHPClassicModel {
 	return NewFrankenPHPClassicModelWithDir("")
+}
+
+// NewFrankenPHPClassicModelWithSite creates a new FrankenPHP Classic Mode model from an existing Nginx site
+func NewFrankenPHPClassicModelWithSite(site system.NginxSite) FrankenPHPClassicModel {
+	m := NewFrankenPHPClassicModelWithDir(site.RootDir)
+	m.formSiteKey = site.Name
+	m.formDomains = site.Domain
+	m.formSiteRoot = site.RootDir
+	// We skip the installation step if binary is already found
+	if m.binaryPath != "" {
+		m.mode = "site_setup"
+		m.buildSiteSetupForm()
+	}
+	return m
 }
 
 // NewFrankenPHPClassicModelWithDir creates a new FrankenPHP Classic Mode model with a specific directory
@@ -148,11 +195,36 @@ func NewFrankenPHPClassicModelWithDir(currentDir string) FrankenPHPClassicModel 
 		currentDir:      currentDir,
 		formSiteRoot:    siteRoot,
 		formSiteKey:     siteKey,
-		formDocroot:     "", // Empty - user can enter relative path like "public" or leave blank
+		formDocroot:     "", // Default empty
 		formConnType:    "socket",
 		formUser:        "www-data",
 		formGroup:       "www-data",
 		formPort:        "8000",
+		formNumThreads:  strconv.Itoa(runtime.NumCPU() * 2),
+		formMaxThreads:  "auto",
+		formMaxWaitTime: "15",
+
+		// PHP INI defaults
+		formPHPMemoryLimit:              "256M",
+		formPHPMaxExecutionTime:         "30",
+		formPHPOpcacheEnable:            true,
+		formPHPOpcacheEnableCli:         true,
+		formPHPOpcacheMemoryConsumption: "512",
+		formPHPOpcacheInternedStrings:   "32",
+		formPHPOpcacheMaxFiles:          "100000",
+		formPHPOpcacheValidate:          false,
+		formPHPOpcacheRevalidateFreq:    "0",
+		formPHPOpcacheJit:               false,
+		formPHPOpcacheJitBufferSize:     "0",
+		formPHPRealpathCacheSize:        "4096K",
+		formPHPRealpathCacheTtl:         "600",
+		detector:                        system.NewDetector(),
+	}
+
+	// Default docroot to 'public' if it exists
+	publicPath := filepath.Join(m.formSiteRoot, "public")
+	if _, err := exec.Command("test", "-d", publicPath).Output(); err == nil {
+		m.formDocroot = "public"
 	}
 
 	// Build the huh form for site setup
@@ -162,7 +234,7 @@ func NewFrankenPHPClassicModelWithDir(currentDir string) FrankenPHPClassicModel 
 }
 
 // buildSiteSetupForm creates the huh form for site configuration
-func (m *FrankenPHPClassicModel) buildSiteSetupForm() *huh.Form {
+func (m FrankenPHPClassicModel) buildSiteSetupForm() *huh.Form {
 	return huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
@@ -237,6 +309,9 @@ func (m *FrankenPHPClassicModel) buildSiteSetupForm() *huh.Form {
 					if port < 1 || port > 65535 {
 						return fmt.Errorf("port must be between 1 and 65535")
 					}
+					if m.detector != nil && m.detector.IsPortInUse(port) {
+						return fmt.Errorf("warning: port %d is already in use by another process", port)
+					}
 					return nil
 				}).
 				Value(&m.formPort),
@@ -255,9 +330,160 @@ func (m *FrankenPHPClassicModel) buildSiteSetupForm() *huh.Form {
 				Placeholder("www-data").
 				Value(&m.formGroup),
 		),
+		huh.NewGroup(
+			huh.NewInput().
+				Key("numThreads").
+				Title("Number of Threads").
+				Description("Suggestion: System Threads * 2").
+				Placeholder(strconv.Itoa(runtime.NumCPU()*2)).
+				Validate(func(s string) error {
+					if _, err := strconv.Atoi(s); err != nil {
+						return fmt.Errorf("must be a number")
+					}
+					return nil
+				}).
+				Value(&m.formNumThreads),
+
+			huh.NewInput().
+				Key("maxThreads").
+				Title("Max Threads").
+				Description("Accepts positive integer > Number of Threads, or 'auto'").
+				Placeholder("auto").
+				Validate(func(s string) error {
+					if s == "auto" {
+						return nil
+					}
+					v, err := strconv.Atoi(s)
+					if err != nil {
+						return fmt.Errorf("must be a number or 'auto'")
+					}
+					num, _ := strconv.Atoi(m.formNumThreads)
+					if v <= num {
+						return fmt.Errorf("must be greater than Number of Threads (%d)", num)
+					}
+					return nil
+				}).
+				Value(&m.formMaxThreads),
+
+			huh.NewInput().
+				Key("maxWaitTime").
+				Title("Max Wait Time").
+				Description("Max time to wait for a thread (in seconds)").
+				Placeholder("15").
+				Validate(func(s string) error {
+					if _, err := strconv.Atoi(s); err != nil {
+						return fmt.Errorf("must be a number")
+					}
+					return nil
+				}).
+				Value(&m.formMaxWaitTime),
+		).Title("Performance Tuning"),
+
+		huh.NewGroup(
+			huh.NewInput().
+				Key("memoryLimit").
+				Title("PHP memory_limit").
+				Placeholder("256M").
+				Value(&m.formPHPMemoryLimit),
+
+			huh.NewInput().
+				Key("maxExecTime").
+				Title("PHP max_execution_time").
+				Placeholder("30").
+				Value(&m.formPHPMaxExecutionTime),
+
+			huh.NewConfirm().
+				Key("opcacheEnable").
+				Title("Enable OPcache").
+				Value(&m.formPHPOpcacheEnable),
+
+			huh.NewConfirm().
+				Key("opcacheCli").
+				Title("Enable OPcache CLI").
+				Value(&m.formPHPOpcacheEnableCli),
+
+			huh.NewInput().
+				Key("opcacheMemory").
+				Title("OPcache Memory Consumption (MB)").
+				Placeholder("512").
+				Value(&m.formPHPOpcacheMemoryConsumption),
+
+			huh.NewInput().
+				Key("opcacheStrings").
+				Title("OPcache Interned Strings Buffer").
+				Placeholder("32").
+				Value(&m.formPHPOpcacheInternedStrings),
+
+			huh.NewInput().
+				Key("opcacheMaxFiles").
+				Title("OPcache Max Accelerated Files").
+				Placeholder("100000").
+				Value(&m.formPHPOpcacheMaxFiles),
+
+			huh.NewConfirm().
+				Key("opcacheValidate").
+				Title("OPcache Validate Timestamps").
+				Description("Set to false for production optimization").
+				Value(&m.formPHPOpcacheValidate),
+
+			huh.NewInput().
+				Key("opcacheFreq").
+				Title("OPcache Revalidate Frequency").
+				Placeholder("0").
+				Value(&m.formPHPOpcacheRevalidateFreq),
+
+			huh.NewConfirm().
+				Key("jit").
+				Title("Enable JIT").
+				Value(&m.formPHPOpcacheJit),
+
+			huh.NewInput().
+				Key("jitBuffer").
+				Title("JIT Buffer Size").
+				Placeholder("0").
+				Value(&m.formPHPOpcacheJitBufferSize),
+
+			huh.NewInput().
+				Key("realpathSize").
+				Title("Realpath Cache Size").
+				Placeholder("4096K").
+				Value(&m.formPHPRealpathCacheSize),
+
+			huh.NewInput().
+				Key("realpathTtl").
+				Title("Realpath Cache TTL").
+				Placeholder("600").
+				Value(&m.formPHPRealpathCacheTtl),
+		).Title("PHP INIT - Core & Opcashe & Realpath"),
 	).WithTheme(m.theme.HuhTheme).
 		WithShowHelp(true).
 		WithShowErrors(true)
+}
+
+// IdentifyExistingFrankenPHPSetup checks if any FrankenPHP classic mode services exist
+func IdentifyExistingFrankenPHPSetup() bool {
+	cmd := exec.Command("bash", "-c", `ls /etc/systemd/system/frankenphp-*.service 2>/dev/null | grep -q .`)
+	err := cmd.Run()
+	return err == nil
+}
+
+// IdentifyExistingFrankenPHPSetupForDir checks if a FrankenPHP classic mode service exists for the given directory
+func IdentifyExistingFrankenPHPSetupForDir(dir string) bool {
+	if dir == "" {
+		return false
+	}
+	// Normalize dir: remove trailing slash
+	dir = strings.TrimSuffix(dir, "/")
+
+	// Use grep -E to handle potential quotes and escape special characters in dir
+	// We look for WorkingDirectory=/path/to/dir or WorkingDirectory="/path/to/dir"
+	escapedDir := strings.ReplaceAll(dir, "/", "\\/")
+	// Matches WorkingDirectory=/path/to/dir, WorkingDirectory="/path/to/dir", with optional trailing slash
+	pattern := fmt.Sprintf(`WorkingDirectory=(")?%s(\/)?(")?$`, escapedDir)
+
+	cmd := exec.Command("bash", "-c", fmt.Sprintf(`grep -Er '%s' /etc/systemd/system/frankenphp-*.service 2>/dev/null | grep -q .`, pattern))
+	err := cmd.Run()
+	return err == nil
 }
 
 // detectFrankenPHPBinary checks if FrankenPHP is installed
@@ -296,7 +522,18 @@ func detectFrankenPHPBinary() (path string, version string, found bool) {
 
 // Init initializes the FrankenPHP Classic screen
 func (m FrankenPHPClassicModel) Init() tea.Cmd {
-	// Always initialize the form when in site_setup mode
+	// Check if a service already exists for this directory
+	if IdentifyExistingFrankenPHPSetupForDir(m.currentDir) {
+		return func() tea.Msg {
+			return NavigateMsg{
+				Screen: FrankenPHPServicesScreen,
+				Data: map[string]interface{}{
+					"filterDir": m.currentDir,
+				},
+			}
+		}
+	}
+
 	if m.mode == "site_setup" && m.form != nil {
 		return m.form.Init()
 	}
@@ -375,9 +612,10 @@ func (m FrankenPHPClassicModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case "enter", " ":
 				if m.cursor == 0 {
-					// Yes - create the site, then show composer setup
-					m.mode = "composer_setup"
-					m.composerCursor = 0
+					// Yes - create the site, then show review files
+					m = m.generateConfigFiles()
+					m.mode = "review_files"
+					m.fileCursor = 0
 					return m, nil
 				} else {
 					// No - go back to form
@@ -408,6 +646,85 @@ func (m FrankenPHPClassicModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case "enter", " ":
 				return m.executeWithComposerSetup()
+			}
+			return m, nil
+		}
+
+		// Handle review_files mode
+		if m.mode == "review_files" {
+			switch msg.String() {
+			case "ctrl+c", "q":
+				return m, tea.Quit
+			case "esc", "backspace":
+				m.mode = "confirm"
+				m.cursor = 0
+				return m, nil
+			case "up", "k":
+				if m.fileCursor > 0 {
+					m.fileCursor--
+				}
+			case "down", "j":
+				if m.fileCursor < len(m.generatedFiles)-1 {
+					m.fileCursor++
+				}
+			case "v", "enter":
+				// View file content internally
+				m.mode = "view_file"
+				return m, nil
+			case "e":
+				// Edit file content with nano or vi
+				if m.fileCursor < len(m.generatedFiles) {
+					file := m.generatedFiles[m.fileCursor]
+					// Write to temp file
+					tmpFile := filepath.Join(os.TempDir(), "ravact-"+file.Name)
+					os.WriteFile(tmpFile, []byte(file.Content), 0644)
+
+					return m, func() tea.Msg {
+						return NavigateMsg{
+							Screen: EditorSelectionScreen,
+							Data: map[string]interface{}{
+								"file":        tmpFile,
+								"description": fmt.Sprintf("Editing %s", file.Name),
+							},
+						}
+					}
+				}
+			case "d":
+				// Proceed to deploy confirmation
+				m.mode = "confirm_deploy"
+				return m, nil
+			}
+			return m, nil
+		}
+
+		// Handle view_file mode (internal preview)
+		if m.mode == "view_file" {
+			switch msg.String() {
+			case "ctrl+c", "q":
+				return m, tea.Quit
+			case "esc", "enter", "v", "backspace":
+				m.mode = "review_files"
+				return m, nil
+			case "d":
+				m.mode = "confirm_deploy"
+				return m, nil
+			}
+			return m, nil
+		}
+
+		// Handle confirm_deploy mode
+		if m.mode == "confirm_deploy" {
+			switch msg.String() {
+			case "ctrl+c", "q":
+				return m, tea.Quit
+			case "esc", "backspace", "n":
+				m.mode = "review_files"
+				return m, nil
+			case "enter", "y", "d":
+				// All done, proceed to deploy and then composer setup
+				m.mode = "composer_setup"
+				m.composerCursor = 0
+				return m, nil
 			}
 			return m, nil
 		}
@@ -448,6 +765,17 @@ func (m FrankenPHPClassicModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
+	case EditorCompleteMsg:
+		if msg.Error == "" && m.mode == "review_files" && m.fileCursor < len(m.generatedFiles) {
+			file := &m.generatedFiles[m.fileCursor]
+			tmpFile := filepath.Join(os.TempDir(), "ravact-"+file.Name)
+			if content, err := os.ReadFile(tmpFile); err == nil {
+				file.Content = string(content)
+				// Clean up
+				os.Remove(tmpFile)
+			}
+		}
+		return m, nil
 	}
 
 	// Update huh form in site_setup mode
@@ -484,7 +812,7 @@ func (m FrankenPHPClassicModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.formGroup = v
 			}
 			// Auto-fill empty fields
-			m.autoFillFields()
+			m = m.autoFillFields()
 			// Go to confirmation
 			m.mode = "confirm"
 			m.cursor = 0
@@ -498,9 +826,9 @@ func (m FrankenPHPClassicModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // autoFillFields auto-fills dependent fields based on site_root
-func (m *FrankenPHPClassicModel) autoFillFields() {
+func (m FrankenPHPClassicModel) autoFillFields() FrankenPHPClassicModel {
 	if m.formSiteRoot == "" {
-		return
+		return m
 	}
 
 	// Auto-fill site key from site root
@@ -530,10 +858,11 @@ func (m *FrankenPHPClassicModel) autoFillFields() {
 	if m.formGroup == "" {
 		m.formGroup = "www-data"
 	}
+	return m
 }
 
 // getFullDocroot returns the full document root path
-func (m *FrankenPHPClassicModel) getFullDocroot() string {
+func (m FrankenPHPClassicModel) getFullDocroot() string {
 	if m.formDocroot == "" {
 		// If no docroot specified, use site root
 		return m.formSiteRoot
@@ -742,292 +1071,111 @@ frankenphp version || echo "Note: Run 'frankenphp version' to verify"
 	}
 }
 
-// buildCreateSiteCommand generates the bash script to create the site
 func (m FrankenPHPClassicModel) buildCreateSiteCommand() string {
 	// Get values from form fields
-	siteRoot := m.formSiteRoot
 	siteKey := m.formSiteKey
-	docroot := m.getFullDocroot()
-	domains := m.formDomains
-	connType := m.formConnType
-	port := m.formPort
+	siteRoot := m.formSiteRoot
 	user := m.formUser
 	group := m.formGroup
-
-	// Use detected binary path
 	binaryPath := m.binaryPath
 	if binaryPath == "" {
 		binaryPath = "/usr/local/bin/frankenphp"
 	}
 
-	// Use defaults if empty
-	if domains == "" {
-		domains = siteKey + ".test"
+	var script strings.Builder
+	script.WriteString("#!/bin/bash\nset -e\n\n")
+
+	script.WriteString(fmt.Sprintf("echo \"Creating FrankenPHP Classic Mode site: %s\"\n", siteKey))
+	script.WriteString(fmt.Sprintf("echo \"  Site Root: %s\"\n", siteRoot))
+	script.WriteString("echo \"\"\n")
+
+	// Create directories
+	script.WriteString(fmt.Sprintf("sudo mkdir -p /etc/frankenphp/%s\n", siteKey))
+	script.WriteString("sudo mkdir -p /run/frankenphp\n")
+	script.WriteString(fmt.Sprintf("sudo chown %s:%s /run/frankenphp\n", user, group))
+
+	// Create storage directory
+	// Create storage directory structure
+	script.WriteString(fmt.Sprintf("sudo mkdir -p /var/lib/caddy/%s/config\n", siteKey))
+	script.WriteString(fmt.Sprintf("sudo mkdir -p /var/lib/caddy/%s/data\n", siteKey))
+	script.WriteString(fmt.Sprintf("sudo mkdir -p /var/lib/caddy/%s/tls\n", siteKey))
+
+	// Set permissions
+	script.WriteString(fmt.Sprintf("sudo chown -R %s:%s /var/lib/caddy/%s\n", user, user, siteKey))
+	script.WriteString(fmt.Sprintf("sudo chmod -R 750 /var/lib/caddy/%s\n", siteKey))
+
+	// Write generated files (this includes Caddyfile, Service, php.ini, Nginx, fpcli)
+	for _, file := range m.generatedFiles {
+		script.WriteString(fmt.Sprintf("\nif [ -f \"%s\" ]; then\n", file.Path))
+		script.WriteString(fmt.Sprintf("    echo \"Backing up existing %s...\"\n", file.Path))
+		script.WriteString(fmt.Sprintf("    cp \"%s\" \"%s.bak\"\n", file.Path, file.Path))
+		script.WriteString("fi\n")
+		// Use heredoc to write content safely
+		script.WriteString(fmt.Sprintf("cat > \"%s\" <<'EOF'\n", file.Path))
+		script.WriteString(file.Content)
+		script.WriteString("\nEOF\n")
 	}
-	if connType == "" {
-		connType = "socket"
-	}
-	if port == "" {
-		port = "8000"
-	}
-	if user == "" {
-		user = "www-data"
-	}
-	if group == "" {
-		group = "www-data"
-	}
 
-	// Build the listen directive based on connection type
-	var listenDirective string
-	var nginxUpstream string
-	if connType == "socket" {
-		listenDirective = fmt.Sprintf("--listen unix:/run/frankenphp/%s.sock", siteKey)
-		nginxUpstream = fmt.Sprintf(`upstream frankenphp_%s {
-    server unix:/run/frankenphp/%s.sock fail_timeout=0;
-}`, siteKey, siteKey)
-	} else {
-		listenDirective = fmt.Sprintf("--listen 127.0.0.1:%s", port)
-		nginxUpstream = fmt.Sprintf(`upstream frankenphp_%s {
-    server 127.0.0.1:%s fail_timeout=0;
-}`, siteKey, port)
-	}
+	// Fix permissions and enable services
+	script.WriteString("\n# Fix permissions and enable services\n")
+	caddyfilePath := fmt.Sprintf("/etc/frankenphp/%s/Caddyfile", siteKey)
+	script.WriteString(fmt.Sprintf("%s fmt --overwrite %s\n", binaryPath, caddyfilePath))
 
-	return fmt.Sprintf(`#!/bin/bash
-set -e
+	// Ensure config permission
+	script.WriteString(fmt.Sprintf("sudo chown -R %s:%s /etc/frankenphp/%s\n", user, group, siteKey))
 
-SITE_ROOT="%s"
-SITE_KEY="%s"
-DOCROOT="%s"
-DOMAINS="%s"
-CONN_TYPE="%s"
-PORT="%s"
-RUN_USER="%s"
-RUN_GROUP="%s"
-FRANKENPHP_BIN="%s"
-LISTEN_DIRECTIVE="%s"
+	serviceName := fmt.Sprintf("frankenphp-%s", siteKey)
+	script.WriteString("sudo systemctl daemon-reload\n")
+	script.WriteString(fmt.Sprintf("sudo systemctl enable --now %s\n", serviceName))
+	script.WriteString(fmt.Sprintf("echo \"✓ Service %s enabled and started\"\n", serviceName))
 
-# Verify FrankenPHP binary exists
-if [ ! -x "$FRANKENPHP_BIN" ]; then
-    echo "Error: FrankenPHP binary not found or not executable at: $FRANKENPHP_BIN"
-    exit 1
-fi
+	// Enable Nginx site if config exists
+	nginxConf := fmt.Sprintf("/etc/nginx/sites-available/%s.conf", siteKey)
+	script.WriteString(fmt.Sprintf("\nif [ -f \"%s\" ]; then\n", nginxConf))
+	script.WriteString(fmt.Sprintf("    ln -sf \"%s\" \"/etc/nginx/sites-enabled/%s.conf\" 2>/dev/null || true\n", nginxConf, siteKey))
+	script.WriteString("    echo \"Validating Nginx configuration...\"\n")
+	script.WriteString("    nginx -t\n")
+	script.WriteString("fi\n")
 
-SERVICE_NAME="frankenphp-${SITE_KEY}"
-SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
-SOCK="/run/frankenphp/${SITE_KEY}.sock"
+	// Set executable bit for fpcli
+	script.WriteString("\nchmod +x /usr/local/bin/fpcli 2>/dev/null || true\n")
+	script.WriteString(fmt.Sprintf("chown -R %s:%s /etc/frankenphp/%s\n", user, group, siteKey))
 
-echo "Creating FrankenPHP Classic Mode site: ${SITE_KEY}"
-echo ""
-echo "  Site Root: ${SITE_ROOT}"
-echo "  Document Root: ${DOCROOT}"
-echo "  Connection: ${CONN_TYPE}"
-if [ "$CONN_TYPE" = "port" ]; then
-    echo "  Port: ${PORT}"
-else
-    echo "  Socket: ${SOCK}"
-fi
-echo ""
+	script.WriteString("\n# Verification phase\n")
+	script.WriteString("set +e\n")
+	script.WriteString("echo \"\"\n")
+	script.WriteString("echo \"=========================================\"\n")
+	script.WriteString("echo \"🔍 Final Verification\"\n")
+	script.WriteString("echo \"=========================================\"\n")
+	script.WriteString("echo \"Checking service status...\"\n")
+	script.WriteString("sleep 1\n")
+	script.WriteString(fmt.Sprintf("\nif sudo systemctl is-active --quiet \"%s\"; then\n", serviceName))
+	script.WriteString("    echo \"✓ FrankenPHP service is active\"\n")
+	script.WriteString("else\n")
+	script.WriteString("    echo \"✗ FrankenPHP service is NOT active!\"\n")
+	script.WriteString(fmt.Sprintf("    echo \"    Diagnostic: sudo systemctl status %s --no-pager -l\"\n", serviceName))
+	script.WriteString(fmt.Sprintf("    sudo systemctl status %s --no-pager -l\n", serviceName))
+	script.WriteString("fi\n")
 
-# Create runtime directory
-mkdir -p /run/frankenphp
-chown ${RUN_USER}:${RUN_GROUP} /run/frankenphp
+	script.WriteString("\necho \"Checking PHP configuration...\"\n")
+	phpIniPath := fmt.Sprintf("/etc/frankenphp/%s/app-php.ini", siteKey)
+	script.WriteString(fmt.Sprintf("if [ -f \"%s\" ]; then\n", phpIniPath))
+	script.WriteString(fmt.Sprintf("    RAW_INI_OUTPUT=$(%s php-cli -c %s --ini 2>&1)\n", binaryPath, phpIniPath))
+	script.WriteString("    LOADED_INI=$(echo \"$RAW_INI_OUTPUT\" | grep \"Loaded Configuration File\" | awk '{print $NF}')\n")
+	script.WriteString(fmt.Sprintf("    if [ \"$LOADED_INI\" = \"%s\" ]; then\n", phpIniPath))
+	script.WriteString("        echo \"  ✓ Custom PHP INI loaded correctly\"\n")
+	script.WriteString("    else\n")
+	script.WriteString("        echo \"  ✗ Custom PHP INI NOT loaded\"\n")
+	script.WriteString("        echo \"    Output: $LOADED_INI\"\n")
+	script.WriteString("        if [ -z \"$LOADED_INI\" ]; then\n")
+	script.WriteString("            echo \"    Error Details: $RAW_INI_OUTPUT\"\n")
+	script.WriteString("        fi\n")
+	script.WriteString("    fi\n")
+	script.WriteString("else\n")
+	script.WriteString("    echo \"  ✗ PHP INI template not found at $phpIniPath\"\n")
+	script.WriteString("fi\n")
 
-# Create systemd service file
-cat > "$SERVICE_FILE" <<EOF
-[Unit]
-Description=FrankenPHP classic mode (${SITE_KEY})
-After=network.target
-Wants=network.target
-
-[Service]
-Type=simple
-User=${RUN_USER}
-Group=${RUN_GROUP}
-WorkingDirectory=${SITE_ROOT}
-
-Environment=APP_ENV=production
-Environment=APP_BASE_PATH=${SITE_ROOT}
-
-RuntimeDirectory=frankenphp
-RuntimeDirectoryMode=0755
-
-ExecStart=${FRANKENPHP_BIN} php-server \\
-    ${LISTEN_DIRECTIVE} \\
-    --root ${DOCROOT}
-
-Restart=always
-RestartSec=2
-TimeoutStopSec=10
-
-NoNewPrivileges=true
-PrivateTmp=true
-
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-echo "✓ Created systemd service: ${SERVICE_FILE}"
-
-# Reload systemd and start service
-systemctl daemon-reload
-systemctl enable --now "${SERVICE_NAME}"
-echo "✓ Service enabled and started"
-
-# Check status
-systemctl status "${SERVICE_NAME}" --no-pager || true
-
-# Generate Nginx config
-NGINX_CONF="/etc/nginx/sites-available/${SITE_KEY}.conf"
-
-if [ -f "$NGINX_CONF" ]; then
-    echo ""
-    echo "========================================="
-    echo "⚠ Nginx config already exists!"
-    echo "========================================="
-    echo ""
-    echo "File: ${NGINX_CONF}"
-    echo ""
-    echo "Existing configuration:"
-    echo "----------------------------------------"
-    cat "$NGINX_CONF"
-    echo "----------------------------------------"
-    echo ""
-    echo "Skipping Nginx config creation to preserve existing settings."
-    echo "If you want to update it, please edit manually or delete the file first."
-else
-    cat > "$NGINX_CONF" <<EOF
-%s
-
-server {
-    listen 80;
-    server_name ${DOMAINS};
-
-    location / {
-        proxy_pass http://frankenphp_${SITE_KEY};
-        proxy_http_version 1.1;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_read_timeout 300s;
-        proxy_connect_timeout 75s;
-    }
-}
-EOF
-
-    echo "✓ Created Nginx config: ${NGINX_CONF}"
-
-    # Enable site
-    if [ -d /etc/nginx/sites-enabled ]; then
-        ln -sf "$NGINX_CONF" "/etc/nginx/sites-enabled/${SITE_KEY}.conf"
-        echo "✓ Enabled Nginx site"
-        
-        # Test and reload nginx
-        nginx -t && systemctl reload nginx
-        echo "✓ Nginx reloaded"
-    fi
-fi
-
-echo ""
-echo "========================================="
-echo "Creating fpcli CLI wrapper..."
-echo "========================================="
-
-# Create fpcli CLI wrapper script (FrankenPHP CLI)
-cat > /usr/local/bin/fpcli <<'FPCLI'
-#!/usr/bin/env bash
-set -euo pipefail
-
-# Defaults that work under sudo/systemd too
-DEFAULT_HOME="/var/www"
-if [ "$(id -u)" -eq 0 ]; then
-  DEFAULT_HOME="/root"
-fi
-
-export HOME="${HOME:-$DEFAULT_HOME}"
-export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
-
-FRANKENPHP="/usr/local/bin/frankenphp"
-php_args=()
-
-# Parse php CLI flags that may appear before the script
-# We intentionally ignore -d flags like allow_url_fopen=1, memory_limit=..., etc.
-while [ $# -gt 0 ]; do
-  case "$1" in
-    -d)
-      # ignore -d and its value
-      shift 2
-      ;;
-    -d*)
-      # ignore combined form like -dallow_url_fopen=1
-      shift
-      ;;
-    -c|-f)
-      # ignore and its value
-      shift 2
-      ;;
-    -n|-q)
-      # ignore
-      shift
-      ;;
-    -v|--version)
-      exec "$FRANKENPHP" php-cli -r 'echo PHP_VERSION, PHP_EOL;'
-      ;;
-    -m)
-      exec "$FRANKENPHP" php-cli -r 'foreach (get_loaded_extensions() as $e) echo $e, PHP_EOL;'
-      ;;
-    -i)
-      exec "$FRANKENPHP" php-cli -r 'phpinfo();'
-      ;;
-    --ini)
-      exec "$FRANKENPHP" php-cli -r 'echo "Loaded Configuration File: ", (php_ini_loaded_file() ?: "(none)"), PHP_EOL; echo "Scan this dir for additional .ini files: ", (php_ini_scanned_files() ? dirname(explode(",", php_ini_scanned_files())[0]) : "(none)"), PHP_EOL;'
-      ;;
-    -r)
-      shift
-      exec "$FRANKENPHP" php-cli "${php_args[@]}" -r "${1-}"
-      ;;
-    --)
-      shift
-      break
-      ;;
-    -*)
-      # pass unknown flags through (best effort)
-      php_args+=("$1")
-      shift
-      ;;
-    *)
-      # first non-flag is script (artisan, composer.phar, file.php)
-      break
-      ;;
-  esac
-done
-
-exec "$FRANKENPHP" php-cli "${php_args[@]}" "$@"
-FPCLI
-
-chmod +x /usr/local/bin/fpcli
-echo "✓ Created /usr/local/bin/fpcli (FrankenPHP CLI wrapper)"
-
-echo ""
-echo "========================================="
-echo "FrankenPHP Classic Mode site created!"
-echo "========================================="
-echo ""
-echo "Service: ${SERVICE_NAME}"
-echo "Socket: ${SOCK}"
-echo "Port: 127.0.0.1:${PORT} (fallback)"
-echo "Nginx: ${NGINX_CONF}"
-echo "CLI: /usr/local/bin/fpcli"
-echo ""
-echo "Commands:"
-echo "  systemctl status ${SERVICE_NAME}"
-echo "  journalctl -u ${SERVICE_NAME} -f"
-echo "  fpcli -v  (PHP version via FrankenPHP)"
-echo ""
-`, siteRoot, siteKey, docroot, domains, connType, port, user, group, binaryPath, listenDirective, nginxUpstream)
+	return script.String()
 }
 
 // executeWithComposerSetup runs the site creation with the selected composer option
@@ -1045,252 +1193,93 @@ func (m FrankenPHPClassicModel) executeWithComposerSetup() (tea.Model, tea.Cmd) 
 		composerCmd = `
 echo ""
 echo "========================================="
-echo "Setting up Composer with FrankenPHP..."
+echo "⚙️  Setting up PHP Symlink"
 echo "========================================="
-echo ""
-echo "Option A: Creating PHP symlink to fpcli"
-echo ""
-
+set -e
 # Backup existing php if it exists and is not a symlink
 if [ -f /usr/local/bin/php ] && [ ! -L /usr/local/bin/php ]; then
-    echo "Backing up existing /usr/local/bin/php to /usr/local/bin/php.bak"
+    echo "  Backing up /usr/local/bin/php to php.bak"
     mv /usr/local/bin/php /usr/local/bin/php.bak
 fi
-
-# Create symlink
 ln -sf /usr/local/bin/fpcli /usr/local/bin/php
 hash -r 2>/dev/null || true
-
-echo "✓ Created symlink: /usr/local/bin/php -> /usr/local/bin/fpcli"
+echo "  ✓ Created /usr/local/bin/php -> /usr/local/bin/fpcli"
+set +e
 echo ""
 echo "Verification:"
-which php
-php -v
-echo ""
-echo "✓ Composer will now use FrankenPHP automatically!"
-echo ""
-echo "Note: System PHP (if installed) is still available at /usr/bin/php"
+ls -la /usr/local/bin/php
+php -v | head -n 1
 `
 	case "option_both":
 		// Option A+C: Both PHP symlink and Composer wrapper
 		composerCmd = `
 echo ""
 echo "========================================="
-echo "Setting up Composer with FrankenPHP..."
+echo "🚀 Setting up Full Composer Integration"
 echo "========================================="
-echo ""
-echo "Option A+C: Creating PHP symlink AND Composer wrapper"
-echo ""
-
-# === Part 1: Create PHP symlink (Option A) ===
-echo "[1/2] Creating PHP symlink..."
-
-# Backup existing php if it exists and is not a symlink
+set -e
+# Part 1: PHP Symlink
 if [ -f /usr/local/bin/php ] && [ ! -L /usr/local/bin/php ]; then
-    echo "  Backing up existing /usr/local/bin/php to /usr/local/bin/php.bak"
     mv /usr/local/bin/php /usr/local/bin/php.bak
 fi
-
-# Create symlink
 ln -sf /usr/local/bin/fpcli /usr/local/bin/php
-echo "  ✓ Created symlink: /usr/local/bin/php -> /usr/local/bin/fpcli"
+echo "  ✓ PHP symlink created"
 
-# === Part 2: Create Composer wrapper (Option C) ===
-echo ""
-echo "[2/2] Setting up Composer wrapper..."
-
-# Check if composer.phar already exists at expected location
-if [ -f /usr/local/bin/composer.phar ]; then
-    echo "  ✓ composer.phar already exists at /usr/local/bin/composer.phar"
-else
+# Part 2: Composer Wrapper
+if [ ! -f /usr/local/bin/composer.phar ]; then
     echo "  Downloading Composer..."
-    
-    # Download composer installer
-    cd /tmp
-    curl -sS https://getcomposer.org/installer -o composer-setup.php
-    
-    if [ ! -f composer-setup.php ]; then
-        echo "  Error: Failed to download composer installer"
-        exit 1
-    fi
-    
-    # Run installer with fpcli
-    /usr/local/bin/fpcli composer-setup.php --install-dir=/usr/local/bin --filename=composer.phar
-    
-    # Clean up installer
-    rm -f composer-setup.php
-    
-    # Verify download
-    if [ -f /usr/local/bin/composer.phar ]; then
-        echo "  ✓ Composer downloaded to /usr/local/bin/composer.phar"
-    else
-        echo "  Trying alternative download method..."
-        curl -sS https://getcomposer.org/download/latest-stable/composer.phar -o /usr/local/bin/composer.phar
-        
-        if [ ! -f /usr/local/bin/composer.phar ]; then
-            echo "  Error: All download methods failed"
-            exit 1
-        fi
-        echo "  ✓ Composer downloaded via direct download"
-    fi
+    curl -sS https://getcomposer.org/installer | /usr/local/bin/fpcli - -- --install-dir=/usr/local/bin --filename=composer.phar
 fi
-
-# Make sure composer.phar is executable
 chmod +x /usr/local/bin/composer.phar
 
-# Create wrapper script
-cat > /usr/local/bin/composer <<'COMPOSERWRAP'
+cat > /usr/local/bin/composer <<'COMPWRAP'
 #!/usr/bin/env bash
-set -euo pipefail
-
-export HOME="${HOME:-/root}"
-export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
-
-# CRITICAL: make Composer scripts (@php) use our php shim
+set -e
 export PHP_BINARY="/usr/local/bin/php"
-
 exec /usr/local/bin/fpcli /usr/local/bin/composer.phar "$@"
-COMPOSERWRAP
-
+COMPWRAP
 chmod +x /usr/local/bin/composer
-echo "  ✓ Created composer wrapper at /usr/local/bin/composer"
-
-# Update PATH hash
+echo "  ✓ Composer wrapper created"
 hash -r 2>/dev/null || true
-
+set +e
 echo ""
-echo "========================================="
 echo "Verification:"
-echo "========================================="
-echo ""
-echo "PHP:"
-which php
-php -v | head -1
-echo ""
-echo "Composer:"
-which composer
 composer --version
-echo ""
-echo "✓ Full FrankenPHP integration complete!"
-echo ""
-echo "Both 'php' and 'composer' commands now use FrankenPHP."
-echo "Laravel @php scripts will work correctly."
 `
 	case "option_c":
-		// Option C: Create composer wrapper
+		// Option C: Create composer wrapper only
 		composerCmd = `
 echo ""
 echo "========================================="
-echo "Setting up Composer with FrankenPHP..."
+echo "⚙️  Setting up Composer Wrapper"
 echo "========================================="
-echo ""
-echo "Option C: Creating Composer wrapper"
-echo ""
-
-# Check if composer.phar already exists at expected location
-if [ -f /usr/local/bin/composer.phar ]; then
-    echo "✓ composer.phar already exists at /usr/local/bin/composer.phar"
-else
-    echo "Downloading Composer..."
-    echo ""
-    
-    # Download composer installer
-    cd /tmp
-    curl -sS https://getcomposer.org/installer -o composer-setup.php
-    
-    if [ ! -f composer-setup.php ]; then
-        echo "Error: Failed to download composer installer"
-        exit 1
-    fi
-    
-    # Run installer with fpcli
-    echo "Running composer installer with FrankenPHP..."
-    /usr/local/bin/fpcli composer-setup.php --install-dir=/usr/local/bin --filename=composer.phar
-    
-    # Clean up installer
-    rm -f composer-setup.php
-    
-    # Verify download
-    if [ -f /usr/local/bin/composer.phar ]; then
-        echo "✓ Composer downloaded to /usr/local/bin/composer.phar"
-    else
-        echo "Error: Composer installation failed"
-        echo "Trying alternative download method..."
-        
-        # Alternative: download phar directly
-        curl -sS https://getcomposer.org/download/latest-stable/composer.phar -o /usr/local/bin/composer.phar
-        
-        if [ ! -f /usr/local/bin/composer.phar ]; then
-            echo "Error: All download methods failed"
-            exit 1
-        fi
-        echo "✓ Composer downloaded via direct download"
-    fi
+set -e
+if [ ! -f /usr/local/bin/composer.phar ]; then
+    echo "  Downloading Composer..."
+    curl -sS https://getcomposer.org/installer | /usr/local/bin/fpcli - -- --install-dir=/usr/local/bin --filename=composer.phar
 fi
-
-# Make sure composer.phar is executable
 chmod +x /usr/local/bin/composer.phar
 
-# Verify composer.phar exists
-echo ""
-echo "Verifying composer.phar..."
-ls -la /usr/local/bin/composer.phar
-
-# Test that composer.phar works with fpcli
-echo ""
-echo "Testing composer.phar with fpcli..."
-/usr/local/bin/fpcli /usr/local/bin/composer.phar --version
-if [ $? -ne 0 ]; then
-    echo "Warning: composer.phar test returned non-zero, but may still work"
-fi
-
-# Create wrapper script
-echo ""
-echo "Creating composer wrapper script..."
-cat > /usr/local/bin/composer <<'COMPOSERWRAP'
+cat > /usr/local/bin/composer <<'COMPWRAP'
 #!/usr/bin/env bash
-set -euo pipefail
-
-export HOME="${HOME:-/root}"
-export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
-
-# CRITICAL: make Composer scripts (@php) use our php shim
-export PHP_BINARY="/usr/local/bin/php"
-
+set -e
 exec /usr/local/bin/fpcli /usr/local/bin/composer.phar "$@"
-COMPOSERWRAP
-
+COMPWRAP
 chmod +x /usr/local/bin/composer
-echo "✓ Created composer wrapper at /usr/local/bin/composer"
-
-# Update PATH hash
+echo "  ✓ Composer wrapper created"
 hash -r 2>/dev/null || true
-
+set +e
 echo ""
-echo "Final verification:"
-echo "  composer location: $(which composer)"
-echo "  composer.phar location: /usr/local/bin/composer.phar"
-echo ""
+echo "Verification:"
 composer --version
-echo ""
-echo "✓ Composer now runs through FrankenPHP!"
 `
 	case "skip":
 		composerCmd = `
 echo ""
 echo "========================================="
-echo "Skipping Composer setup"
+echo "⏭️  Skipping Composer Setup"
 echo "========================================="
-echo ""
-echo "You can configure Composer manually later:"
-echo ""
-echo "Option A - Replace PHP:"
-echo "  sudo ln -sf /usr/local/bin/fpcli /usr/local/bin/php"
-echo ""
-echo "Option C - Wrap Composer:"
-echo "  sudo mv /usr/local/bin/composer /usr/local/bin/composer.phar"
-echo "  # Then create wrapper script (see docs)"
-echo ""
+echo " FrankenPHP site is ready."
 `
 	}
 
@@ -1300,9 +1289,217 @@ echo ""
 	return m, func() tea.Msg {
 		return ExecutionStartMsg{
 			Command:     fullCmd,
-			Description: "Creating FrankenPHP site and configuring Composer",
+			Description: "Setting up FrankenPHP Site and Composer integration",
 		}
 	}
+}
+
+// generateConfigFiles generates the content for the 3 config files
+func (m FrankenPHPClassicModel) generateConfigFiles() FrankenPHPClassicModel {
+	m.generatedFiles = []GeneratedFile{}
+
+	id := m.formSiteKey
+
+	// 1. Caddyfile
+	caddyTemplate := m.generateCaddyfileContent()
+	m.generatedFiles = append(m.generatedFiles, GeneratedFile{
+		Name:    "Caddyfile",
+		Path:    fmt.Sprintf("/etc/frankenphp/%s/Caddyfile", id),
+		Content: caddyTemplate,
+	})
+
+	// 2. Systemd Service
+	serviceTemplate := m.generateServiceFileContent()
+	m.generatedFiles = append(m.generatedFiles, GeneratedFile{
+		Name:    "Systemd Service",
+		Path:    fmt.Sprintf("/etc/systemd/system/frankenphp-%s.service", id),
+		Content: serviceTemplate,
+	})
+
+	// 3. Nginx Config
+	nginxTemplate := m.generateNginxContent()
+	m.generatedFiles = append(m.generatedFiles, GeneratedFile{
+		Name:    "Nginx Config",
+		Path:    fmt.Sprintf("/etc/nginx/sites-available/%s.conf", id),
+		Content: nginxTemplate,
+	})
+	// 4. fpcli Wrapper
+	fpcliTemplate := m.generateFpcliContent()
+	m.generatedFiles = append(m.generatedFiles, GeneratedFile{
+		Name:    "fpcli Wrapper",
+		Path:    "/usr/local/bin/fpcli",
+		Content: fpcliTemplate,
+	})
+	return m
+}
+
+func (m FrankenPHPClassicModel) generateCaddyfileContent() string {
+	id := m.formSiteKey
+	docroot := m.getFullDocroot()
+	port := m.formPort
+	if port == "" {
+		port = "8000"
+	}
+
+	numThreads := m.formNumThreads
+	maxThreads := m.formMaxThreads
+	maxWaitTime := m.formMaxWaitTime
+
+	var bindLine string
+	if m.formConnType == "socket" {
+		bindLine = fmt.Sprintf("bind unix//run/frankenphp/%s.sock", id)
+	} else {
+		bindLine = fmt.Sprintf("bind 127.0.0.1:%s", port)
+	}
+
+	// Build PHP directives
+	var phpDirectives strings.Builder
+	settings := map[string]string{
+		"memory_limit":                    m.formPHPMemoryLimit,
+		"max_execution_time":              m.formPHPMaxExecutionTime,
+		"opcache.enable":                  "0",
+		"opcache.enable_cli":              "0",
+		"opcache.memory_consumption":      m.formPHPOpcacheMemoryConsumption,
+		"opcache.interned_strings_buffer": m.formPHPOpcacheInternedStrings,
+		"opcache.max_accelerated_files":   m.formPHPOpcacheMaxFiles,
+		"opcache.validate_timestamps":     "0",
+		"opcache.revalidate_freq":         m.formPHPOpcacheRevalidateFreq,
+		"opcache.jit":                     "0",
+		"opcache.jit_buffer_size":         m.formPHPOpcacheJitBufferSize,
+		"realpath_cache_size":             m.formPHPRealpathCacheSize,
+		"realpath_cache_ttl":              m.formPHPRealpathCacheTtl,
+	}
+
+	if m.formPHPOpcacheEnable {
+		settings["opcache.enable"] = "1"
+	}
+	if m.formPHPOpcacheEnableCli {
+		settings["opcache.enable_cli"] = "1"
+	}
+	if m.formPHPOpcacheValidate {
+		settings["opcache.validate_timestamps"] = "1"
+	}
+	if m.formPHPOpcacheJit {
+		settings["opcache.jit"] = "1255"
+	}
+
+	keys := []string{
+		"memory_limit", "max_execution_time", "opcache.enable", "opcache.enable_cli",
+		"opcache.memory_consumption", "opcache.interned_strings_buffer", "opcache.max_accelerated_files",
+		"opcache.validate_timestamps", "opcache.revalidate_freq", "opcache.jit",
+		"opcache.jit_buffer_size", "realpath_cache_size", "realpath_cache_ttl",
+	}
+
+	for _, k := range keys {
+		if v, ok := settings[k]; ok && v != "" {
+			phpDirectives.WriteString(fmt.Sprintf("\t\tphp_ini %s %s\n", k, v))
+		}
+	}
+
+	content, err := stubs.LoadAndReplace("caddyfile", map[string]string{
+		"SITE_KEY":       id,
+		"NUM_THREADS":    numThreads,
+		"MAX_THREADS":    maxThreads,
+		"MAX_WAIT_TIME":  maxWaitTime,
+		"PORT":           port,
+		"BIND_LINE":      bindLine,
+		"DOCROOT":        docroot,
+		"PHP_DIRECTIVES": strings.TrimSpace(phpDirectives.String()),
+	})
+	if err != nil {
+		return fmt.Sprintf("Error loading caddyfile stub: %v", err)
+	}
+
+	return content
+}
+
+func (m FrankenPHPClassicModel) generateServiceFileContent() string {
+	id := m.formSiteKey
+	siteRoot := m.formSiteRoot
+	user := m.formUser
+	group := m.formGroup
+	binary := m.binaryPath
+	if binary == "" {
+		binary = "/usr/local/bin/frankenphp"
+	}
+
+	var preStart string
+	var postStart string
+	if m.formConnType == "socket" {
+		preStart = fmt.Sprintf("ExecStartPre=/usr/bin/rm -f /run/frankenphp/%s.sock\n", id)
+		postStart = fmt.Sprintf("ExecStartPost=/bin/sh -c 'for i in $(seq 1 50); do [ -S /run/frankenphp/%s.sock ] && chmod 0660 /run/frankenphp/%s.sock && exit 0; sleep 0.1; done; echo \"Socket not created: /run/frankenphp/%s.sock\" >&2; exit 1'\n", id, id, id)
+	}
+
+	caddyfile := fmt.Sprintf("/etc/frankenphp/%s/Caddyfile", id)
+
+	content, err := stubs.LoadAndReplace("service", map[string]string{
+		"ID":                id,
+		"USER":              user,
+		"GROUP":             group,
+		"WORKING_DIRECTORY": siteRoot,
+		"APP_BASE_PATH":     siteRoot,
+		"PRE_START":         preStart,
+		"BINARY":            binary,
+		"CADDYFILE":         caddyfile,
+		"POST_START":        postStart,
+	})
+	if err != nil {
+		return fmt.Sprintf("Error loading service stub: %v", err)
+	}
+
+	return content
+}
+
+// generateNginxContent generates the Nginx proxy configuration
+func (m FrankenPHPClassicModel) generateNginxContent() string {
+	id := m.formSiteKey
+	domains := m.formDomains
+	if domains == "" {
+		domains = id + ".test"
+	}
+
+	var upstream string
+	if m.formConnType == "socket" {
+		upstream = fmt.Sprintf(`upstream frankenphp_%s {
+    server unix:/run/frankenphp/%s.sock fail_timeout=0;
+}`, id, id)
+	} else {
+		port := m.formPort
+		if port == "" {
+			port = "8000"
+		}
+		upstream = fmt.Sprintf(`upstream frankenphp_%s {
+    server 127.0.0.1:%s fail_timeout=0;
+}`, id, port)
+	}
+
+	content, err := stubs.LoadAndReplace("nginx", map[string]string{
+		"UPSTREAM": upstream,
+		"DOMAINS":  domains,
+		"SITE_KEY": id,
+	})
+	if err != nil {
+		return fmt.Sprintf("Error loading nginx stub: %v", err)
+	}
+
+	return content
+}
+
+// generateFpcliContent generates the fpcli CLI wrapper script
+func (m FrankenPHPClassicModel) generateFpcliContent() string {
+	binary := m.binaryPath
+	if binary == "" {
+		binary = "/usr/local/bin/frankenphp"
+	}
+
+	content, err := stubs.LoadAndReplace("fpcli", map[string]string{
+		"BINARY": binary,
+	})
+	if err != nil {
+		return fmt.Sprintf("Error loading fpcli stub: %v", err)
+	}
+
+	return content
 }
 
 // View renders the FrankenPHP Classic Mode screen
@@ -1320,6 +1517,12 @@ func (m FrankenPHPClassicModel) View() string {
 		return m.viewSiteSetup()
 	case "confirm":
 		return m.viewConfirm()
+	case "review_files":
+		return m.viewReviewFiles()
+	case "view_file":
+		return m.viewFileContent()
+	case "confirm_deploy":
+		return m.viewConfirmDeploy()
 	case "composer_setup":
 		return m.viewComposerSetup()
 	}
@@ -1349,7 +1552,7 @@ func (m FrankenPHPClassicModel) viewCustomURLInput() string {
 	help := m.theme.Help.Render("Enter: Download • Esc: Cancel")
 
 	content := lipgloss.JoinVertical(lipgloss.Left, header, "", instructions, "", inputField, "", help)
-	bordered := m.theme.BorderStyle.Render(content)
+	bordered := m.theme.RenderBox(content)
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
 }
 
@@ -1360,7 +1563,7 @@ func (m FrankenPHPClassicModel) viewInstallOptions() string {
 		header := m.theme.Title.Render("FrankenPHP Classic Mode")
 		messageBox := m.theme.InfoStyle.Render(m.message)
 		content := lipgloss.JoinVertical(lipgloss.Left, header, "", messageBox)
-		bordered := m.theme.BorderStyle.Render(content)
+		bordered := m.theme.RenderBox(content)
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
 	}
 
@@ -1416,7 +1619,7 @@ func (m FrankenPHPClassicModel) viewInstallOptions() string {
 	sections = append(sections, "", help)
 
 	content := lipgloss.JoinVertical(lipgloss.Left, sections...)
-	bordered := m.theme.BorderStyle.Render(content)
+	bordered := m.theme.RenderBox(content)
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
 }
 
@@ -1428,7 +1631,7 @@ func (m FrankenPHPClassicModel) viewSiteSetup() string {
 		messageBox := m.theme.InfoStyle.Render(m.message)
 		help := m.theme.Help.Render("Press any key to continue...")
 		content := lipgloss.JoinVertical(lipgloss.Left, header, "", messageBox, "", help)
-		bordered := m.theme.BorderStyle.Render(content)
+		bordered := m.theme.RenderBox(content)
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
 	}
 
@@ -1466,7 +1669,7 @@ func (m FrankenPHPClassicModel) viewSiteSetup() string {
 	sections = append(sections, "", help)
 
 	content := lipgloss.JoinVertical(lipgloss.Left, sections...)
-	bordered := m.theme.BorderStyle.Render(content)
+	bordered := m.theme.RenderBox(content)
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
 }
 
@@ -1502,6 +1705,23 @@ func (m FrankenPHPClassicModel) viewConfirm() string {
 		summary = append(summary, m.theme.Label.Render("Run as Group: ")+m.theme.InfoStyle.Render(m.formGroup))
 	}
 
+	// Performance Tuning
+	summary = append(summary, "")
+	summary = append(summary, m.theme.Subtitle.Render("Performance Tuning:"))
+	summary = append(summary, m.theme.Label.Render("Threads:       ")+m.theme.InfoStyle.Render(fmt.Sprintf("%s (max: %s)", m.formNumThreads, m.formMaxThreads)))
+	summary = append(summary, m.theme.Label.Render("Max Wait:      ")+m.theme.InfoStyle.Render(m.formMaxWaitTime+"s"))
+
+	// PHP INI
+	summary = append(summary, "")
+	summary = append(summary, m.theme.Subtitle.Render("PHP Configuration:"))
+	summary = append(summary, m.theme.Label.Render("Memory Limit:  ")+m.theme.InfoStyle.Render(m.formPHPMemoryLimit))
+	summary = append(summary, m.theme.Label.Render("Max Exec Time: ")+m.theme.InfoStyle.Render(m.formPHPMaxExecutionTime+"s"))
+	opcacheStatus := "Enabled"
+	if !m.formPHPOpcacheEnable {
+		opcacheStatus = "Disabled"
+	}
+	summary = append(summary, m.theme.Label.Render("OPcache:       ")+m.theme.InfoStyle.Render(opcacheStatus))
+
 	// What will be created
 	siteKey := m.formSiteKey
 	port := m.formPort
@@ -1510,19 +1730,25 @@ func (m FrankenPHPClassicModel) viewConfirm() string {
 	}
 
 	summary = append(summary, "")
-	summary = append(summary, m.theme.Subtitle.Render("Will create:"))
-	summary = append(summary, m.theme.DescriptionStyle.Render(fmt.Sprintf("  • /etc/systemd/system/frankenphp-%s.service", siteKey)))
-	summary = append(summary, m.theme.DescriptionStyle.Render(fmt.Sprintf("  • /etc/nginx/sites-available/%s.conf", siteKey)))
-	summary = append(summary, m.theme.DescriptionStyle.Render(fmt.Sprintf("  • /run/frankenphp/%s.sock (Unix socket)", siteKey)))
-	summary = append(summary, m.theme.DescriptionStyle.Render(fmt.Sprintf("  • 127.0.0.1:%s (TCP fallback)", port)))
-	summary = append(summary, m.theme.DescriptionStyle.Render("  • /usr/local/bin/fpcli (FrankenPHP CLI wrapper)"))
+	summary = append(summary, m.theme.Subtitle.Render("Will generate and deploy:"))
+	summary = append(summary, m.theme.DescriptionStyle.Render(fmt.Sprintf("  • %s", m.theme.Label.Render("systemd service: "))+fmt.Sprintf("/etc/systemd/system/frankenphp-%s.service", siteKey)))
+	summary = append(summary, m.theme.DescriptionStyle.Render(fmt.Sprintf("  • %s", m.theme.Label.Render("FrankenPHP Caddyfile: "))+fmt.Sprintf("/etc/frankenphp/%s/Caddyfile", siteKey)))
+	summary = append(summary, m.theme.DescriptionStyle.Render(fmt.Sprintf("  • %s", m.theme.Label.Render("Custom app-php.ini: "))+fmt.Sprintf("/etc/frankenphp/%s/app-php.ini", siteKey)))
+	summary = append(summary, m.theme.DescriptionStyle.Render(fmt.Sprintf("  • %s", m.theme.Label.Render("Nginx proxy config: "))+fmt.Sprintf("/etc/nginx/sites-available/%s.conf", siteKey)))
+	summary = append(summary, m.theme.DescriptionStyle.Render(fmt.Sprintf("  • %s", m.theme.Label.Render("CLI wrapper script: "))+"/usr/local/bin/fpcli"))
+
+	if m.formConnType == "socket" {
+		summary = append(summary, m.theme.DescriptionStyle.Render(fmt.Sprintf("  • %s /run/frankenphp/%s.sock", m.theme.Label.Render("Unix Socket:"), siteKey)))
+	} else {
+		summary = append(summary, m.theme.DescriptionStyle.Render(fmt.Sprintf("  • %s 127.0.0.1:%s", m.theme.Label.Render("TCP Port:"), port)))
+	}
 
 	summarySection := lipgloss.JoinVertical(lipgloss.Left, summary...)
 
 	// Yes/No options
 	var options []string
 	options = append(options, "")
-	choices := []string{"Yes, create the site", "No, go back"}
+	choices := []string{"Review and Confirm Configuration files", "No, go back"}
 	for i, choice := range choices {
 		cursor := "  "
 		if i == m.cursor {
@@ -1544,10 +1770,10 @@ func (m FrankenPHPClassicModel) viewConfirm() string {
 
 	optionsSection := lipgloss.JoinVertical(lipgloss.Left, options...)
 
-	help := m.theme.Help.Render("↑/↓: Navigate • Enter: Confirm • Esc: Back")
+	help := m.theme.Help.Render("↑/↓: Navigate • Enter: Select • Esc: Back")
 
 	content := lipgloss.JoinVertical(lipgloss.Left, header, "", summarySection, optionsSection, "", help)
-	bordered := m.theme.BorderStyle.Render(content)
+	bordered := m.theme.RenderBox(content)
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
 }
 
@@ -1628,6 +1854,111 @@ func (m FrankenPHPClassicModel) viewComposerSetup() string {
 	sections = append(sections, "", help)
 
 	content := lipgloss.JoinVertical(lipgloss.Left, sections...)
-	bordered := m.theme.BorderStyle.Render(content)
+	bordered := m.theme.RenderBox(content)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
+}
+
+// viewReviewFiles renders the file review view
+func (m FrankenPHPClassicModel) viewReviewFiles() string {
+	header := m.theme.Title.Render("Review Configuration Files")
+
+	description := m.theme.DescriptionStyle.Render("Review and optionally edit the files that will be created.")
+
+	var items []string
+	items = append(items, "")
+	for i, file := range m.generatedFiles {
+		cursor := "  "
+		if i == m.fileCursor {
+			cursor = m.theme.KeyStyle.Render("▶ ")
+		}
+
+		var renderedItem string
+		if i == m.fileCursor {
+			renderedItem = m.theme.SelectedItem.Render(fmt.Sprintf("%s%s", cursor, file.Name))
+		} else {
+			renderedItem = m.theme.MenuItem.Render(fmt.Sprintf("%s%s", cursor, file.Name))
+		}
+		items = append(items, renderedItem)
+		items = append(items, "    "+m.theme.DescriptionStyle.Render(file.Path))
+		items = append(items, "")
+	}
+
+	menu := lipgloss.JoinVertical(lipgloss.Left, items...)
+
+	statusInfo := lipgloss.JoinVertical(lipgloss.Left,
+		"",
+		m.theme.Subtitle.Render("Actions:"),
+		m.theme.DescriptionStyle.Render(fmt.Sprintf("  %s: View/Preview file content", m.theme.KeyStyle.Render("Enter/v"))),
+		m.theme.DescriptionStyle.Render(fmt.Sprintf("  %s: Edit file (select editor)", m.theme.KeyStyle.Render("e"))),
+		m.theme.DescriptionStyle.Render(fmt.Sprintf("  %s: Proceed to Deployment", m.theme.KeyStyle.Render("d"))),
+	)
+
+	help := m.theme.Help.Render("↑/↓: Navigate • Enter: View • e: Edit • d: Deploy • Esc: Back")
+
+	content := lipgloss.JoinVertical(lipgloss.Left, header, "", description, "", menu, statusInfo, "", help)
+	bordered := m.theme.RenderBox(content)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
+}
+
+// viewFileContent renders the content of a single generated file
+func (m FrankenPHPClassicModel) viewFileContent() string {
+	if m.fileCursor >= len(m.generatedFiles) {
+		return "No file selected"
+	}
+
+	file := m.generatedFiles[m.fileCursor]
+	header := m.theme.Title.Render(fmt.Sprintf("Preview: %s", file.Name))
+	path := m.theme.DescriptionStyle.Render(file.Path)
+
+	// Wrap content in a style
+	content := m.theme.MenuItem.Render(file.Content)
+
+	help := m.theme.Help.Render("Esc/Enter/v: Back to List • d: Proceed to Deployment • q: Quit")
+
+	sections := []string{
+		header,
+		path,
+		"",
+		content,
+		"",
+		help,
+	}
+
+	contentSection := lipgloss.JoinVertical(lipgloss.Left, sections...)
+	bordered := m.theme.RenderBox(contentSection)
+
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
+}
+
+// viewConfirmDeploy renders the final deployment confirmation
+func (m FrankenPHPClassicModel) viewConfirmDeploy() string {
+	header := m.theme.Title.Render("Final Deployment Confirmation")
+
+	message := lipgloss.JoinVertical(lipgloss.Left,
+		m.theme.Subtitle.Render("Are you sure you want to deploy the site now?"),
+		"",
+		m.theme.DescriptionStyle.Render("This will:"),
+		m.theme.DescriptionStyle.Render("  • Create all configuration files"),
+		m.theme.DescriptionStyle.Render("  • Run systemctl daemon-reload"),
+		m.theme.DescriptionStyle.Render("  • Enable and start the systemd service"),
+		m.theme.DescriptionStyle.Render("  • Create Nginx symbolic link and test config"),
+		m.theme.DescriptionStyle.Render("  • Configure Composer integration"),
+		m.theme.SuccessStyle.Render("  • Run final verification checks"),
+		m.theme.WarningStyle.Render("  • (Nginx reload must be done manually if needed)"),
+		"",
+		m.theme.InfoStyle.Render("You can still review the verification results after deployment."),
+	)
+
+	choices := lipgloss.JoinVertical(lipgloss.Left,
+		"",
+		m.theme.SuccessStyle.Render("  Enter/d/y: Yes, Deploy now"),
+		m.theme.DescriptionStyle.Render("  Esc/n: No, back to review"),
+	)
+
+	help := m.theme.Help.Render("Enter: Confirm Deployment • Esc: Cancel")
+
+	content := lipgloss.JoinVertical(lipgloss.Left, header, "", message, choices, "", help)
+	bordered := m.theme.RenderBox(content)
+
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
 }

@@ -188,7 +188,7 @@ func (m SSLOptionsModel) View() string {
 	)
 
 	// Add border and center
-	bordered := m.theme.BorderStyle.Render(content)
+	bordered := m.theme.RenderBox(content)
 
 	return lipgloss.Place(
 		m.width,

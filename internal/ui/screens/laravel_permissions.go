@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/iperamuna/ravact/internal/system"
 	"github.com/iperamuna/ravact/internal/ui/theme"
 )
 
@@ -31,13 +32,16 @@ type LaravelPermissionsModel struct {
 	projectPath string
 	webUser     string
 	systemUser  string // from git config meta.systemuser
-	err         error
-	success     string
-	
 	// .env creation state
-	envState       string // "", "select_env", "confirm_key"
-	envType        string // "local", "staging", "production"
-	envCursor      int
+	envState  string // "", "select_env", "confirm_key"
+	envType   string // "local", "staging", "production"
+	envCursor int
+	err       error
+	success   string
+
+	// User selection state
+	availableUsers []string
+	selectingUser  bool
 }
 
 // NewLaravelPermissionsModel creates a new Laravel permissions model
@@ -45,25 +49,59 @@ func NewLaravelPermissionsModel() LaravelPermissionsModel {
 	// Check if current directory is a Laravel project
 	cwd, _ := os.Getwd()
 	isLaravel := isLaravelProject(cwd)
-	
+
 	// Detect web server user
 	webUser := detectWebUser()
-	
+
 	// Get system user from git config
 	systemUser := getGitSystemUser()
 
-	// Use system user if available, otherwise fall back to $USER
-	ownerUser := "$USER"
-	if systemUser != "" {
-		ownerUser = systemUser
+	// Get available users for selection
+	um := system.NewUserManager()
+	allUsers, _ := um.GetAllUsers()
+	var availableUsers []string
+	for _, user := range allUsers {
+		// Filter for regular users (UID >= 1000) or common ones
+		if user.UID >= 1000 || user.Username == "www-data" {
+			availableUsers = append(availableUsers, user.Username)
+		}
 	}
 
-	actions := []LaravelPermAction{
+	m := LaravelPermissionsModel{
+		theme:          theme.DefaultTheme(),
+		cursor:         0,
+		isLaravel:      isLaravel,
+		projectPath:    cwd,
+		webUser:        webUser,
+		systemUser:     systemUser,
+		availableUsers: availableUsers,
+	}
+
+	// Actions will be built in View or Update once user is confirmed
+	m.actions = m.buildActions()
+
+	// If system user is missing, start in selection mode
+	if m.systemUser == "" {
+		m.selectingUser = true
+	}
+
+	return m
+}
+
+// buildActions creates the list of actions with the current system user
+func (m *LaravelPermissionsModel) buildActions() []LaravelPermAction {
+	ownerUser := m.systemUser
+	if ownerUser == "" {
+		ownerUser = "$USER"
+	}
+	webUser := m.webUser
+
+	return []LaravelPermAction{
 		{
 			ID:          "standard",
 			Name:        "Set Standard Permissions",
 			Description: "Set 755 for directories, 644 for files (recommended)",
-			Command:     fmt.Sprintf("find . -type d -exec chmod 755 {} \\; && find . -type f -exec chmod 644 {} \\;"),
+			Command:     "find . -type d -exec chmod 755 {} \\; && find . -type f -exec chmod 644 {} \\;",
 		},
 		{
 			ID:          "storage_writable",
@@ -117,7 +155,6 @@ func NewLaravelPermissionsModel() LaravelPermissionsModel {
 			ID:          "create_env",
 			Name:        "Create .env from .env.example",
 			Description: "Copy .env.example to .env and optionally generate APP_KEY",
-			Command:     "", // Special handling
 		},
 		{
 			ID:          "artisan_migrate",
@@ -144,27 +181,20 @@ func NewLaravelPermissionsModel() LaravelPermissionsModel {
 			Command:     "php artisan key:generate",
 		},
 		{
+			ID:          "change_user",
+			Name:        "Change System User",
+			Description: "Select a different user for permissions",
+		},
+		{
 			ID:          "setup_scheduler",
 			Name:        "Setup Laravel Scheduler",
-			Description: "Add scheduler cron job for www-data user",
-			Command:     "", // Special handling
+			Description: "Add scheduler cron job for web server user",
 		},
 		{
 			ID:          "back",
 			Name:        "← Back to Site Commands",
 			Description: "Return to site commands menu",
-			Command:     "",
 		},
-	}
-
-	return LaravelPermissionsModel{
-		theme:       theme.DefaultTheme(),
-		cursor:      0,
-		actions:     actions,
-		isLaravel:   isLaravel,
-		projectPath: cwd,
-		webUser:     webUser,
-		systemUser:  systemUser,
 	}
 }
 
@@ -185,7 +215,7 @@ func isLaravelProject(path string) bool {
 		// Check for Laravel-specific directories
 		storagePath := filepath.Join(path, "storage")
 		bootstrapPath := filepath.Join(path, "bootstrap", "cache")
-		
+
 		if _, err := os.Stat(storagePath); err == nil {
 			if _, err := os.Stat(bootstrapPath); err == nil {
 				return true
@@ -199,7 +229,7 @@ func isLaravelProject(path string) bool {
 func detectWebUser() string {
 	// Common web server users in order of likelihood
 	users := []string{"www-data", "nginx", "apache", "http", "nobody"}
-	
+
 	// Check if /etc/passwd exists (Linux system)
 	if _, err := os.Stat("/etc/passwd"); err == nil {
 		// Return first common user (www-data for Debian/Ubuntu)
@@ -250,6 +280,20 @@ func (m LaravelPermissionsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "enter", " ":
+			if m.selectingUser {
+				m.systemUser = m.availableUsers[m.cursor]
+				m.selectingUser = false
+				m.cursor = 0
+
+				// Try to save to git config if it's a git repo
+				cmd := exec.Command("git", "rev-parse", "--is-inside-work-tree")
+				if err := cmd.Run(); err == nil {
+					exec.Command("git", "config", "meta.systemuser", m.systemUser).Run()
+				}
+
+				m.actions = m.buildActions()
+				return m, nil
+			}
 			return m.executeAction()
 		}
 	}
@@ -260,7 +304,7 @@ func (m LaravelPermissionsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // updateEnvSelection handles environment type selection
 func (m LaravelPermissionsModel) updateEnvSelection(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	envOptions := []string{"local", "staging", "production"}
-	
+
 	switch msg.String() {
 	case "ctrl+c", "q":
 		return m, tea.Quit
@@ -309,16 +353,16 @@ func (m LaravelPermissionsModel) updateKeyConfirm(msg tea.KeyMsg) (tea.Model, te
 // executeEnvCreation creates the .env file
 func (m LaravelPermissionsModel) executeEnvCreation() (tea.Model, tea.Cmd) {
 	generateKey := m.envCursor == 0 // Yes is first option
-	
+
 	var command string
 	if generateKey {
 		command = fmt.Sprintf(`cp .env.example .env && sed -i 's/APP_ENV=.*/APP_ENV=%s/' .env && echo '✓ Created .env with APP_ENV=%s' && php artisan key:generate`, m.envType, m.envType)
 	} else {
 		command = fmt.Sprintf(`cp .env.example .env && sed -i 's/APP_ENV=.*/APP_ENV=%s/' .env && echo '✓ Created .env with APP_ENV=%s'`, m.envType, m.envType)
 	}
-	
+
 	m.envState = ""
-	
+
 	return m, func() tea.Msg {
 		return ExecutionStartMsg{
 			Command:     command,
@@ -330,7 +374,7 @@ func (m LaravelPermissionsModel) executeEnvCreation() (tea.Model, tea.Cmd) {
 // setupScheduler adds the Laravel scheduler cron job to www-data's crontab
 func (m LaravelPermissionsModel) setupScheduler() (tea.Model, tea.Cmd) {
 	projectPath := m.projectPath
-	
+
 	// Command to:
 	// 1. Check if cron entry already exists
 	// 2. If not, add it to www-data's crontab
@@ -420,13 +464,30 @@ func (m LaravelPermissionsModel) executeAction() (LaravelPermissionsModel, tea.C
 		return model.(LaravelPermissionsModel), cmd
 	}
 
+	// Handle Change User
+	if action.ID == "change_user" {
+		m.selectingUser = true
+		m.cursor = 0
+		return m, nil
+	}
+
 	if action.Command == "" {
 		return m, nil
 	}
 
+	// Wrap command in sudo heredoc
+	finalCommand := action.Command
+	if m.systemUser != "" {
+		finalCommand = fmt.Sprintf(`sudo -i -u %s bash << 'EOF'
+cd "%s"
+%s
+EOF
+`, m.systemUser, m.projectPath, action.Command)
+	}
+
 	return m, func() tea.Msg {
 		return ExecutionStartMsg{
-			Command:     action.Command,
+			Command:     finalCommand,
 			Description: action.Name,
 		}
 	}
@@ -436,6 +497,11 @@ func (m LaravelPermissionsModel) executeAction() (LaravelPermissionsModel, tea.C
 func (m LaravelPermissionsModel) View() string {
 	if m.width == 0 {
 		return "Loading..."
+	}
+
+	// Handle user selection state
+	if m.selectingUser {
+		return m.viewUserSelection()
 	}
 
 	// Handle env selection states
@@ -460,7 +526,7 @@ func (m LaravelPermissionsModel) View() string {
 	} else {
 		infoLines = append(infoLines, m.theme.SuccessStyle.Render("✓ Laravel project detected"))
 	}
-	
+
 	infoLines = append(infoLines, "")
 	infoLines = append(infoLines, m.theme.Label.Render("Web User: ")+m.theme.InfoStyle.Render(m.webUser))
 	if m.systemUser != "" {
@@ -500,7 +566,7 @@ func (m LaravelPermissionsModel) View() string {
 		}
 
 		actionItems = append(actionItems, renderedItem)
-		
+
 		// Show description for selected item
 		if i == m.cursor {
 			actionItems = append(actionItems, "    "+m.theme.DescriptionStyle.Render(action.Description))
@@ -544,7 +610,7 @@ func (m LaravelPermissionsModel) View() string {
 	content := lipgloss.JoinVertical(lipgloss.Left, sections...)
 
 	// Add border and center
-	bordered := m.theme.BorderStyle.Render(content)
+	bordered := m.theme.RenderBox(content)
 
 	return lipgloss.Place(
 		m.width,
@@ -592,7 +658,7 @@ func (m LaravelPermissionsModel) viewEnvSelection() string {
 	help := m.theme.Help.Render("↑/↓: Navigate • Enter: Select • Esc: Cancel")
 
 	content := lipgloss.JoinVertical(lipgloss.Left, header, "", description, menu, "", help)
-	bordered := m.theme.BorderStyle.Render(content)
+	bordered := m.theme.RenderBox(content)
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
 }
 
@@ -630,6 +696,48 @@ func (m LaravelPermissionsModel) viewKeyConfirm() string {
 	help := m.theme.Help.Render("↑/↓: Navigate • Enter: Confirm • Esc: Back")
 
 	content := lipgloss.JoinVertical(lipgloss.Left, header, "", info, menu, "", help)
-	bordered := m.theme.BorderStyle.Render(content)
+	bordered := m.theme.RenderBox(content)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
+}
+
+// viewUserSelection renders the user selection screen
+func (m LaravelPermissionsModel) viewUserSelection() string {
+	header := m.theme.Title.Render("Select System User")
+
+	isRepo := false
+	cmd := exec.Command("git", "rev-parse", "--is-inside-work-tree")
+	if err := cmd.Run(); err == nil {
+		isRepo = true
+	}
+
+	var description string
+	if isRepo {
+		description = m.theme.DescriptionStyle.Render("Git repository detected. Select a user to set as meta.systemuser for this project.")
+	} else {
+		description = m.theme.DescriptionStyle.Render("Select a system user to run permission commands as.")
+	}
+
+	var items []string
+	items = append(items, "")
+	for i, user := range m.availableUsers {
+		cursor := "  "
+		if i == m.cursor {
+			cursor = m.theme.KeyStyle.Render("▶ ")
+		}
+
+		var renderedItem string
+		if i == m.cursor {
+			renderedItem = m.theme.SelectedItem.Render(fmt.Sprintf("%s%s", cursor, user))
+		} else {
+			renderedItem = m.theme.MenuItem.Render(fmt.Sprintf("%s%s", cursor, user))
+		}
+		items = append(items, renderedItem)
+	}
+
+	menu := lipgloss.JoinVertical(lipgloss.Left, items...)
+	help := m.theme.Help.Render("↑/↓: Navigate • Enter: Select • Esc: Back")
+
+	content := lipgloss.JoinVertical(lipgloss.Left, header, "", description, menu, "", help)
+	bordered := m.theme.RenderBox(content)
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
 }

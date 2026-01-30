@@ -276,7 +276,7 @@ func (m UserDetailsModel) View() string {
 			m.theme.DescriptionStyle.Render(m.err.Error()) + "\n\n" +
 			m.theme.Help.Render("Press any key to continue • Esc to go back")
 
-		bordered := m.theme.BorderStyle.Render(errorMsg)
+		bordered := m.theme.RenderBox(errorMsg)
 		return lipgloss.Place(
 			m.width,
 			m.height,
@@ -299,7 +299,7 @@ func (m UserDetailsModel) View() string {
 			msgStyle.Render(m.message) + "\n\n" +
 			m.theme.Help.Render("Press any key to continue • Esc to go back")
 
-		bordered := m.theme.BorderStyle.Render(messageDisplay)
+		bordered := m.theme.RenderBox(messageDisplay)
 		return lipgloss.Place(
 			m.width,
 			m.height,
@@ -377,7 +377,7 @@ func (m UserDetailsModel) View() string {
 	)
 
 	// Add border and center
-	bordered := m.theme.BorderStyle.Render(content)
+	bordered := m.theme.RenderBox(content)
 
 	return lipgloss.Place(
 		m.width,

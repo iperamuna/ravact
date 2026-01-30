@@ -48,6 +48,7 @@ const (
 	DeveloperToolkitScreen
 	FileBrowserScreen
 	SSHKeyManagementScreen
+	TextDisplayScreen
 )
 
 // NavigateMsg is sent when navigating between screens

@@ -257,7 +257,7 @@ func (m PostgreSQLManagementModel) View() string {
 	sections = append(sections, "", help)
 
 	content := lipgloss.JoinVertical(lipgloss.Left, sections...)
-	bordered := m.theme.BorderStyle.Render(content)
+	bordered := m.theme.RenderBox(content)
 
 	return lipgloss.Place(
 		m.width,

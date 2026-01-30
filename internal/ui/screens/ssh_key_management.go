@@ -858,7 +858,7 @@ func (m SSHKeyManagementModel) renderError() string {
 		m.theme.DescriptionStyle.Render(m.err.Error()) + "\n\n" +
 		m.theme.Help.Render("Press any key to continue")
 
-	bordered := m.theme.BorderStyle.Render(errorMsg)
+	bordered := m.theme.RenderBox(errorMsg)
 	return lipgloss.Place(
 		m.width,
 		m.height,
@@ -881,7 +881,7 @@ func (m SSHKeyManagementModel) renderMessage() string {
 		msgStyle.Render(m.message) + "\n\n" +
 		m.theme.Help.Render("Press any key to continue")
 
-	bordered := m.theme.BorderStyle.Render(messageDisplay)
+	bordered := m.theme.RenderBox(messageDisplay)
 	return lipgloss.Place(
 		m.width,
 		m.height,
@@ -977,7 +977,7 @@ func (m SSHKeyManagementModel) renderList() string {
 		help,
 	)
 
-	bordered := m.theme.BorderStyle.Render(content)
+	bordered := m.theme.RenderBox(content)
 	return lipgloss.Place(
 		m.width,
 		m.height,
@@ -1016,7 +1016,7 @@ func (m SSHKeyManagementModel) renderGenerateForm() string {
 		Padding(paddingV, paddingH).
 		Render(content)
 
-	bordered := m.theme.BorderStyle.Render(paddedContent)
+	bordered := m.theme.RenderBox(paddedContent)
 	return lipgloss.Place(
 		m.width,
 		m.height,
@@ -1107,7 +1107,7 @@ func (m SSHKeyManagementModel) renderKeyDetails() string {
 		help,
 	)
 
-	bordered := m.theme.BorderStyle.Render(content)
+	bordered := m.theme.RenderBox(content)
 	return lipgloss.Place(
 		m.width,
 		m.height,
@@ -1172,7 +1172,7 @@ func (m SSHKeyManagementModel) renderCopyKey() string {
 		Padding(paddingV, paddingH).
 		Render(content)
 
-	bordered := m.theme.BorderStyle.Render(paddedContent)
+	bordered := m.theme.RenderBox(paddedContent)
 	return lipgloss.Place(
 		m.width,
 		m.height,
@@ -1247,7 +1247,7 @@ func (m SSHKeyManagementModel) renderExportOptions() string {
 		Padding(paddingV, paddingH).
 		Render(content)
 
-	bordered := m.theme.BorderStyle.Render(paddedContent)
+	bordered := m.theme.RenderBox(paddedContent)
 	return lipgloss.Place(
 		m.width,
 		m.height,
@@ -1294,7 +1294,7 @@ func (m SSHKeyManagementModel) renderConfirmDelete() string {
 		help,
 	)
 
-	bordered := m.theme.BorderStyle.Render(content)
+	bordered := m.theme.RenderBox(content)
 	return lipgloss.Place(
 		m.width,
 		m.height,

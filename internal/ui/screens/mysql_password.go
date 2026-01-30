@@ -151,7 +151,7 @@ func (m MySQLPasswordModel) View() string {
 	content = append(content, m.theme.Help.Render("Enter: Submit "+m.theme.Symbols.Bullet+" Esc: Cancel"))
 
 	body := lipgloss.JoinVertical(lipgloss.Left, content...)
-	bordered := m.theme.BorderStyle.Render(body)
+	bordered := m.theme.RenderBox(body)
 
 	return lipgloss.Place(
 		m.width,

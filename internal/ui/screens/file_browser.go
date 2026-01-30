@@ -1424,7 +1424,7 @@ func (m FileBrowserModel) View() string {
 	content := lipgloss.JoinVertical(lipgloss.Left, sections...)
 
 	// Add border
-	bordered := m.theme.BorderStyle.Render(content)
+	bordered := m.theme.RenderBox(content)
 
 	// Use same paddingH as defined above for content width
 	paddingV := 2
@@ -1491,7 +1491,7 @@ func (m FileBrowserModel) renderPreview() string {
 
 	sections := []string{header, info, "", previewContent, "", scrollInfo, "", help}
 	content := lipgloss.JoinVertical(lipgloss.Left, sections...)
-	bordered := m.theme.BorderStyle.Render(content)
+	bordered := m.theme.RenderBox(content)
 
 	return lipgloss.Place(
 		m.width,
@@ -1672,7 +1672,7 @@ func (m FileBrowserModel) renderHelp() string {
 	helpContent := lipgloss.JoinVertical(lipgloss.Left, content...)
 
 	// Add border
-	bordered := m.theme.BorderStyle.Render(helpContent)
+	bordered := m.theme.RenderBox(helpContent)
 
 	return lipgloss.Place(
 		m.width,
@@ -1829,7 +1829,7 @@ func (m FileBrowserModel) renderInfo() string {
 	content = append(content, help)
 
 	infoContent := lipgloss.JoinVertical(lipgloss.Left, content...)
-	bordered := m.theme.BorderStyle.Render(infoContent)
+	bordered := m.theme.RenderBox(infoContent)
 
 	return lipgloss.Place(
 		m.width,

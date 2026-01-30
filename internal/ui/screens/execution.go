@@ -48,6 +48,7 @@ type ExecutionModel struct {
 	returnScreen ScreenType
 	copied       bool
 	copiedTimer  int
+	showCommand  bool
 }
 
 // ExecutionOutputMsg is sent when new output is received
@@ -95,19 +96,19 @@ func extractScriptPath(command string) (scriptPath string, envPrefix string) {
 	if !strings.Contains(command, "assets/scripts/") || !strings.HasSuffix(command, ".sh") {
 		return "", ""
 	}
-	
+
 	// Find the script path in the command
 	// Handle cases like "ENV_VAR=value assets/scripts/script.sh" or just "assets/scripts/script.sh"
 	idx := strings.Index(command, "assets/scripts/")
 	if idx == -1 {
 		return "", ""
 	}
-	
+
 	scriptPath = command[idx:]
 	if idx > 0 {
 		envPrefix = strings.TrimSpace(command[:idx])
 	}
-	
+
 	return scriptPath, envPrefix
 }
 
@@ -120,7 +121,7 @@ func (m ExecutionModel) executeCommand() tea.Msg {
 	// Check if this is a script path (embedded)
 	var cmd *exec.Cmd
 	scriptPath, envPrefix := extractScriptPath(m.command)
-	
+
 	if scriptPath != "" {
 		// Check OS compatibility for setup scripts
 		if runtime.GOOS != "linux" {
@@ -134,14 +135,14 @@ func (m ExecutionModel) executeCommand() tea.Msg {
 			errorMsg += "  2. Use Docker: make docker-test\n"
 			errorMsg += "  3. Use a Linux VM (Multipass, UTM, VirtualBox)\n\n"
 			errorMsg += "See docs/MACOS_LIMITATIONS.md for details."
-			
+
 			return ExecutionCompleteMsg{
 				Success: false,
 				Output:  errorMsg,
 				Error:   fmt.Errorf("setup scripts require Linux (current OS: %s)", runtime.GOOS),
 			}
 		}
-		
+
 		// Execute embedded script by reading content and piping to bash
 		scriptContent, err := EmbeddedFS.ReadFile(scriptPath)
 		if err != nil {
@@ -172,7 +173,7 @@ func (m ExecutionModel) executeCommand() tea.Msg {
 		}
 		cmd = exec.CommandContext(ctx, "bash", "-c", m.command)
 	}
-	
+
 	// Get stdout and stderr pipes
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -203,7 +204,7 @@ func (m ExecutionModel) executeCommand() tea.Msg {
 
 	// Stream output (this is a simplified version - in real TUI we'd use channels)
 	outputLines := []string{}
-	
+
 	// Read stdout
 	stdoutScanner := bufio.NewScanner(stdout)
 	go func() {
@@ -216,13 +217,13 @@ func (m ExecutionModel) executeCommand() tea.Msg {
 	stderrScanner := bufio.NewScanner(stderr)
 	go func() {
 		for stderrScanner.Scan() {
-			outputLines = append(outputLines, "[ERROR] "+stderrScanner.Text())
+			outputLines = append(outputLines, stderrScanner.Text())
 		}
 	}()
 
 	// Wait for command to complete
 	err = cmd.Wait()
-	
+
 	// Build final output
 	output := strings.Join(outputLines, "\n")
 	if output == "" {
@@ -263,18 +264,18 @@ func (m ExecutionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.state = ExecutionFailed
 		}
-		
+
 		// Add output lines
 		lines := strings.Split(msg.Output, "\n")
 		for _, line := range lines {
 			m.output = append(m.output, line)
 		}
-		
+
 		// Trim to max lines
 		if len(m.output) > m.maxLines {
 			m.output = m.output[len(m.output)-m.maxLines:]
 		}
-		
+
 		// Auto-scroll to bottom when output is added
 		if m.autoScroll {
 			m.scrollOffset = len(m.output) - (m.height - 10)
@@ -282,13 +283,13 @@ func (m ExecutionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.scrollOffset = 0
 			}
 		}
-		
+
 		if msg.Error != nil {
 			m.exitCode = 1
 		} else {
 			m.exitCode = 0
 		}
-		
+
 		return m, nil
 
 	case tea.KeyMsg:
@@ -345,6 +346,9 @@ func (m ExecutionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.scrollOffset < 0 {
 				m.scrollOffset = 0
 			}
+
+		case "s":
+			m.showCommand = !m.showCommand
 		}
 
 	case CopyTimerTickMsg:
@@ -385,8 +389,13 @@ func (m ExecutionModel) View() string {
 	// Description
 	desc := m.theme.DescriptionStyle.Render(m.description)
 
-	// Command
-	cmdDisplay := m.theme.Label.Render("Command: ") + m.theme.MenuItem.Render(m.command)
+	// Command (hidden by default)
+	var cmdDisplay string
+	if m.showCommand {
+		cmdDisplay = m.theme.Label.Render("Command: ") + m.theme.MenuItem.Render(m.command)
+	} else {
+		cmdDisplay = m.theme.DescriptionStyle.Render("Press 's' to show the command being executed")
+	}
 
 	// Duration
 	var duration string
@@ -451,7 +460,7 @@ func (m ExecutionModel) View() string {
 	}
 
 	output := lipgloss.JoinVertical(lipgloss.Left, outputLines...)
-	outputBox := m.theme.BorderStyle.Render(output)
+	outputBox := m.theme.BorderStyle.Copy().Width(m.theme.AppWidth).Render(output)
 
 	// Progress indicator
 	var progress string
@@ -470,9 +479,9 @@ func (m ExecutionModel) View() string {
 	// Help text
 	var help string
 	if m.state == ExecutionRunning {
-		help = m.theme.Help.Render(m.theme.Symbols.ArrowUp + "/" + m.theme.Symbols.ArrowDown + ": Scroll • Ctrl+C: Cancel • Please wait...")
+		help = m.theme.Help.Render(m.theme.Symbols.ArrowUp + "/" + m.theme.Symbols.ArrowDown + ": Scroll • s: Toggle Command • Ctrl+C: Cancel • Please wait...")
 	} else {
-		help = m.theme.Help.Render(m.theme.Symbols.ArrowUp + "/" + m.theme.Symbols.ArrowDown + ": Scroll • c: Copy • Enter/Esc: Continue • q: Quit")
+		help = m.theme.Help.Render(m.theme.Symbols.ArrowUp + "/" + m.theme.Symbols.ArrowDown + ": Scroll • s: Toggle Command • c: Copy • Enter/Esc: Continue • q: Quit")
 	}
 
 	// Exit code
@@ -510,8 +519,8 @@ func (m ExecutionModel) View() string {
 
 	content := lipgloss.JoinVertical(lipgloss.Left, sections...)
 
-	// Add border and center
-	bordered := m.theme.BorderStyle.Render(content)
+	// Add border and center using RenderBox for consistency and wrapping
+	bordered := m.theme.RenderBox(content)
 
 	return lipgloss.Place(
 		m.width,

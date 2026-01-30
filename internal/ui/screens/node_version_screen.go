@@ -2,11 +2,13 @@ package screens
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/iperamuna/ravact/internal/system"
 	"github.com/iperamuna/ravact/internal/ui/theme"
 )
 
@@ -28,6 +30,8 @@ type NodeVersionModel struct {
 	currentVersion string
 	nvmInstalled   bool
 	systemUser     string // from git config meta.systemuser
+	availableUsers []string
+	selectingUser  bool
 }
 
 // NewNodeVersionModel creates a new node version selection model
@@ -44,11 +48,21 @@ func NewNodeVersionModel(commandType string) NodeVersionModel {
 	// Detect current Node version
 	currentVersion := detectNodeVersion()
 	nvmInstalled := isNvmInstalled()
-	
-	// Get system user from git config
-	systemUser := getNodeSystemUser()
 
-	return NodeVersionModel{
+	// Get system user from git config
+	systemUser := getGitSystemUser()
+
+	// Get available users for selection
+	um := system.NewUserManager()
+	allUsers, _ := um.GetAllUsers()
+	var availableUsers []string
+	for _, user := range allUsers {
+		if user.UID >= 1000 || user.Username == "www-data" {
+			availableUsers = append(availableUsers, user.Username)
+		}
+	}
+
+	m := NodeVersionModel{
 		theme:          theme.DefaultTheme(),
 		cursor:         0,
 		versions:       versions,
@@ -56,17 +70,15 @@ func NewNodeVersionModel(commandType string) NodeVersionModel {
 		currentVersion: currentVersion,
 		nvmInstalled:   nvmInstalled,
 		systemUser:     systemUser,
+		availableUsers: availableUsers,
 	}
-}
 
-// getNodeSystemUser retrieves the meta.systemuser from git config
-func getNodeSystemUser() string {
-	cmd := exec.Command("git", "config", "--get", "meta.systemuser")
-	output, err := cmd.Output()
-	if err != nil {
-		return ""
+	// If system user is missing, start in selection mode
+	if m.systemUser == "" {
+		m.selectingUser = true
 	}
-	return strings.TrimSpace(string(output))
+
+	return m
 }
 
 // detectNodeVersion gets the current Node.js version
@@ -124,6 +136,18 @@ func (m NodeVersionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "enter", " ":
+			if m.selectingUser {
+				m.systemUser = m.availableUsers[m.cursor]
+				m.selectingUser = false
+				m.cursor = 0
+
+				// Try to save to git config if it's a git repo
+				cmd := exec.Command("git", "rev-parse", "--is-inside-work-tree")
+				if err := cmd.Run(); err == nil {
+					exec.Command("git", "config", "meta.systemuser", m.systemUser).Run()
+				}
+				return m, nil
+			}
 			return m.executeCommand()
 		}
 	}
@@ -134,7 +158,7 @@ func (m NodeVersionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // executeCommand runs the npm command with selected node version
 func (m NodeVersionModel) executeCommand() (NodeVersionModel, tea.Cmd) {
 	selectedVersion := m.versions[m.cursor]
-	
+
 	var command string
 	var description string
 
@@ -161,9 +185,12 @@ func (m NodeVersionModel) executeCommand() (NodeVersionModel, tea.Cmd) {
 
 	// If system user is configured, run as that user
 	if m.systemUser != "" {
-		cwd, _ := exec.Command("pwd").Output()
-		cwdStr := strings.TrimSpace(string(cwd))
-		command = fmt.Sprintf(`su - %s -c 'cd "%s" && %s'`, m.systemUser, cwdStr, baseCmd)
+		cwd, _ := os.Getwd()
+		command = fmt.Sprintf(`sudo -i -u %s bash << 'EOF'
+cd "%s"
+%s
+EOF
+`, m.systemUser, cwd, baseCmd)
 		description = fmt.Sprintf("%s (as %s)", description, m.systemUser)
 	} else {
 		command = baseCmd
@@ -183,6 +210,11 @@ func (m NodeVersionModel) View() string {
 		return "Loading..."
 	}
 
+	// Handle user selection state
+	if m.selectingUser {
+		return m.viewUserSelection()
+	}
+
 	// Header
 	title := "NPM Install"
 	if m.commandType == "npm_build" {
@@ -193,18 +225,18 @@ func (m NodeVersionModel) View() string {
 	// Current status
 	var statusLines []string
 	statusLines = append(statusLines, m.theme.Label.Render("Current Node.js: ")+m.theme.InfoStyle.Render(m.currentVersion))
-	
+
 	if m.nvmInstalled {
 		statusLines = append(statusLines, m.theme.SuccessStyle.Render("✓ nvm detected - version switching available"))
 	} else {
 		statusLines = append(statusLines, m.theme.WarningStyle.Render("⚠ nvm not installed - using current version only"))
 	}
-	
+
 	// Show system user if configured
 	if m.systemUser != "" {
 		statusLines = append(statusLines, m.theme.Label.Render("Run as: ")+m.theme.SuccessStyle.Render(m.systemUser)+" (from git config)")
 	}
-	
+
 	statusSection := lipgloss.JoinVertical(lipgloss.Left, statusLines...)
 
 	// Version options
@@ -227,7 +259,7 @@ func (m NodeVersionModel) View() string {
 		}
 
 		versionItems = append(versionItems, renderedItem)
-		
+
 		// Show description for selected item
 		if i == m.cursor {
 			versionItems = append(versionItems, "    "+m.theme.DescriptionStyle.Render(version.Description))
@@ -251,7 +283,7 @@ func (m NodeVersionModel) View() string {
 	)
 
 	// Add border and center
-	bordered := m.theme.BorderStyle.Render(content)
+	bordered := m.theme.RenderBox(content)
 
 	return lipgloss.Place(
 		m.width,
@@ -260,4 +292,34 @@ func (m NodeVersionModel) View() string {
 		lipgloss.Center,
 		bordered,
 	)
+}
+
+func (m NodeVersionModel) viewUserSelection() string {
+	header := m.theme.Title.Render("Select System User")
+
+	description := m.theme.DescriptionStyle.Render("Select a user to run NPM commands as.")
+
+	var items []string
+	items = append(items, "")
+	for i, user := range m.availableUsers {
+		cursor := "  "
+		if i == m.cursor {
+			cursor = m.theme.KeyStyle.Render("▶ ")
+		}
+
+		var renderedItem string
+		if i == m.cursor {
+			renderedItem = m.theme.SelectedItem.Render(fmt.Sprintf("%s%s", cursor, user))
+		} else {
+			renderedItem = m.theme.MenuItem.Render(fmt.Sprintf("%s%s", cursor, user))
+		}
+		items = append(items, renderedItem)
+	}
+
+	menu := lipgloss.JoinVertical(lipgloss.Left, items...)
+	help := m.theme.Help.Render("↑/↓: Navigate • Enter: Select • Esc: Back")
+
+	content := lipgloss.JoinVertical(lipgloss.Left, header, "", description, menu, "", help)
+	bordered := m.theme.RenderBox(content)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
 }

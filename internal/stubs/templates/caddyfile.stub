@@ -1,0 +1,29 @@
+{
+	admin off
+
+	storage file_system {
+		root /var/lib/caddy/{{SITE_KEY}}/tls
+	}
+
+	# FrankenPHP classic mode tuning
+	frankenphp {
+		num_threads {{NUM_THREADS}}
+		max_threads {{MAX_THREADS}}
+		max_wait_time {{MAX_WAIT_TIME}}s
+		{{PHP_DIRECTIVES}}
+	}
+
+	# Optional: if nginx is your only entrypoint, you usually want HTTP only here
+	auto_https off
+}
+
+:{{PORT}} {
+	# Listen via specified method
+	{{BIND_LINE}}
+
+	root * {{DOCROOT}}
+	php_server {
+		try_files {path} /index.php
+	}
+	file_server
+}

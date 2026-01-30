@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Defaults that work under sudo/systemd too
+DEFAULT_HOME="/var/www"
+if [ "$(id -u)" -eq 0 ]; then
+  DEFAULT_HOME="/root"
+fi
+
+export HOME="${HOME:-$DEFAULT_HOME}"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+
+FRANKENPHP="{{BINARY}}"
+php_args=()
+
+# Parse php CLI flags that may appear before the script
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -d)
+      # ignore -d and its value
+      shift 2
+      ;;
+    -d*)
+      # ignore combined form like -dallow_url_fopen=1
+      shift
+      ;;
+    -c|-f)
+      # ignore and its value
+      shift 2
+      ;;
+    -n|-q)
+      # ignore
+      shift
+      ;;
+    -v|--version)
+      exec "$FRANKENPHP" php-cli -r 'echo PHP_VERSION, PHP_EOL;'
+      ;;
+    -m)
+      exec "$FRANKENPHP" php-cli -r 'foreach (get_loaded_extensions() as $e) echo $e, PHP_EOL;'
+      ;;
+    -i)
+      exec "$FRANKENPHP" php-cli -r 'phpinfo();'
+      ;;
+    --ini)
+      exec "$FRANKENPHP" php-cli -r 'echo "Loaded Configuration File: ", (php_ini_loaded_file() ?: "(none)"), PHP_EOL; echo "Scan this dir for additional .ini files: ", (php_ini_scanned_files() ? dirname(explode(",", php_ini_scanned_files())[0]) : "(none)"), PHP_EOL;'
+      ;;
+    -r)
+      shift
+      exec "$FRANKENPHP" php-cli "${php_args[@]}" -r "${1-}"
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      # pass unknown flags through (best effort)
+      php_args+=("$1")
+      shift
+      ;;
+    *)
+      # first non-flag is script (artisan, composer.phar, file.php)
+      break
+      ;;
+  esac
+done
+
+exec "$FRANKENPHP" php-cli "${php_args[@]}" "$@"

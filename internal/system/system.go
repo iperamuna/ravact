@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"runtime"
@@ -363,7 +364,7 @@ func GetHostInfo() string {
 	if err != nil {
 		return ""
 	}
-	
+
 	ipAddr := GetPrimaryIP()
 	if ipAddr != "" && ipAddr != "N/A" {
 		return fmt.Sprintf("%s (%s)", hostname, ipAddr)
@@ -411,4 +412,14 @@ func GetPrimaryIP() string {
 	}
 
 	return "N/A"
+}
+
+// IsPortInUse checks if a TCP port is currently in use
+func (d *Detector) IsPortInUse(port int) bool {
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		return true
+	}
+	_ = ln.Close()
+	return false
 }

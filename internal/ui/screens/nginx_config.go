@@ -242,7 +242,7 @@ func (m NginxConfigModel) View() string {
 	)
 
 	// Add border and center
-	bordered := m.theme.BorderStyle.Render(fullContent)
+	bordered := m.theme.RenderBox(fullContent)
 
 	return lipgloss.Place(
 		m.width,

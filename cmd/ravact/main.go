@@ -18,65 +18,66 @@ var embeddedAssets embed.FS
 
 // Model represents the root application model
 type Model struct {
-	currentScreen  screens.ScreenType
-	previousScreen screens.ScreenType
-	splash         screens.SplashModel
-	mainMenu       screens.MainMenuModel
-	setupMenu      screens.SetupMenuModel
-	setupAction    screens.SetupActionModel
-	installedApps  screens.InstalledAppsModel
-	userManagement screens.UserManagementModel
-	userDetails    screens.UserDetailsModel
-	addUser        screens.AddUserModel
-	configMenu     screens.ConfigMenuModel
-	nginxConfig    screens.NginxConfigModel
-	addSite        screens.AddSiteModel
-	siteDetails    screens.SiteDetailsModel
-	sslOptions     screens.SSLOptionsModel
-	sslManual      screens.SSLManualModel
-	editorSelection screens.EditorSelectionModel
-	redisConfig    screens.RedisConfigModel
-	redisPassword  screens.RedisPasswordModel
-	redisPort      screens.RedisPortModel
-	mysqlManagement screens.MySQLManagementModel
-	mysqlPassword   screens.MySQLPasswordModel
-	mysqlPort       screens.MySQLPortModel
-	postgresqlManagement screens.PostgreSQLManagementModel
-	postgresqlPassword   screens.PostgreSQLPasswordModel
-	postgresqlPort       screens.PostgreSQLPortModel
-	phpfpmManagement screens.PHPFPMManagementModel
-	supervisorManagement screens.SupervisorManagementModel
+	currentScreen          screens.ScreenType
+	previousScreen         screens.ScreenType
+	splash                 screens.SplashModel
+	mainMenu               screens.MainMenuModel
+	setupMenu              screens.SetupMenuModel
+	setupAction            screens.SetupActionModel
+	installedApps          screens.InstalledAppsModel
+	userManagement         screens.UserManagementModel
+	userDetails            screens.UserDetailsModel
+	addUser                screens.AddUserModel
+	configMenu             screens.ConfigMenuModel
+	nginxConfig            screens.NginxConfigModel
+	addSite                screens.AddSiteModel
+	siteDetails            screens.SiteDetailsModel
+	sslOptions             screens.SSLOptionsModel
+	sslManual              screens.SSLManualModel
+	editorSelection        screens.EditorSelectionModel
+	redisConfig            screens.RedisConfigModel
+	redisPassword          screens.RedisPasswordModel
+	redisPort              screens.RedisPortModel
+	mysqlManagement        screens.MySQLManagementModel
+	mysqlPassword          screens.MySQLPasswordModel
+	mysqlPort              screens.MySQLPortModel
+	postgresqlManagement   screens.PostgreSQLManagementModel
+	postgresqlPassword     screens.PostgreSQLPasswordModel
+	postgresqlPort         screens.PostgreSQLPortModel
+	phpfpmManagement       screens.PHPFPMManagementModel
+	supervisorManagement   screens.SupervisorManagementModel
 	supervisorXMLRPCConfig screens.SupervisorXMLRPCConfigModel
-	supervisorAddProgram screens.SupervisorAddProgramModel
-	firewallManagement screens.FirewallManagementModel
-	dragonflyInstall screens.DragonflyInstallModel
-	siteCommands   screens.SiteCommandsModel
-	gitManagement  screens.GitManagementModel
-	laravelPerms   screens.LaravelPermissionsModel
-	nodeVersion    screens.NodeVersionModel
-	phpVersion     screens.PHPVersionModel
-	phpInstall     screens.PHPInstallModel
-	phpExtensions  screens.PHPExtensionsModel
-	frankenphpClassic   screens.FrankenPHPClassicModel
-	frankenphpServices  screens.FrankenPHPServicesModel
-	quickCommands  screens.QuickCommandsModel
-	execution      screens.ExecutionModel
-	developerToolkit screens.DeveloperToolkitModel
-	fileBrowser      screens.FileBrowserModel
-	sshKeyManagement screens.SSHKeyManagementModel
-	configEditorActive string // "add_site" or "site_details"
-	width          int
-	height         int
-	scriptsDir     string
-	configsDir     string
-	copyMode       bool // When true, mouse is released for text selection
+	supervisorAddProgram   screens.SupervisorAddProgramModel
+	firewallManagement     screens.FirewallManagementModel
+	dragonflyInstall       screens.DragonflyInstallModel
+	siteCommands           screens.SiteCommandsModel
+	gitManagement          screens.GitManagementModel
+	laravelPerms           screens.LaravelPermissionsModel
+	nodeVersion            screens.NodeVersionModel
+	phpVersion             screens.PHPVersionModel
+	phpInstall             screens.PHPInstallModel
+	phpExtensions          screens.PHPExtensionsModel
+	frankenphpClassic      screens.FrankenPHPClassicModel
+	frankenphpServices     screens.FrankenPHPServicesModel
+	quickCommands          screens.QuickCommandsModel
+	execution              screens.ExecutionModel
+	developerToolkit       screens.DeveloperToolkitModel
+	fileBrowser            screens.FileBrowserModel
+	sshKeyManagement       screens.SSHKeyManagementModel
+	textDisplay            screens.TextDisplayModel
+	configEditorActive     string // "add_site" or "site_details"
+	width                  int
+	height                 int
+	scriptsDir             string
+	configsDir             string
+	copyMode               bool // When true, mouse is released for text selection
 }
 
 // NewModel creates a new application model
 func NewModel() Model {
 	// No need to extract - we'll read directly from embedded FS
 	// Removed info message - silent operation
-	
+
 	return Model{
 		currentScreen:  screens.SplashScreen,
 		splash:         screens.NewSplashModel(Version),
@@ -103,8 +104,189 @@ func (m Model) Init() tea.Cmd {
 	return nil
 }
 
+// updateCurrentScreen delegates the message to the current screen
+func (m Model) updateCurrentScreen(msg tea.Msg) (Model, tea.Cmd) {
+	var cmd tea.Cmd
+	switch m.currentScreen {
+	case screens.SplashScreen:
+		var model tea.Model
+		model, cmd = m.splash.Update(msg)
+		m.splash = model.(screens.SplashModel)
+	case screens.MainMenuScreen:
+		var model tea.Model
+		model, cmd = m.mainMenu.Update(msg)
+		m.mainMenu = model.(screens.MainMenuModel)
+	case screens.SetupMenuScreen:
+		var model tea.Model
+		model, cmd = m.setupMenu.Update(msg)
+		m.setupMenu = model.(screens.SetupMenuModel)
+	case screens.SetupActionScreen:
+		var model tea.Model
+		model, cmd = m.setupAction.Update(msg)
+		m.setupAction = model.(screens.SetupActionModel)
+	case screens.InstalledAppsScreen:
+		var model tea.Model
+		model, cmd = m.installedApps.Update(msg)
+		m.installedApps = model.(screens.InstalledAppsModel)
+	case screens.UserManagementScreen:
+		var model tea.Model
+		model, cmd = m.userManagement.Update(msg)
+		m.userManagement = model.(screens.UserManagementModel)
+	case screens.UserDetailsScreen:
+		var model tea.Model
+		model, cmd = m.userDetails.Update(msg)
+		m.userDetails = model.(screens.UserDetailsModel)
+	case screens.AddUserScreen:
+		var model tea.Model
+		model, cmd = m.addUser.Update(msg)
+		m.addUser = model.(screens.AddUserModel)
+	case screens.ConfigMenuScreen:
+		var model tea.Model
+		model, cmd = m.configMenu.Update(msg)
+		m.configMenu = model.(screens.ConfigMenuModel)
+	case screens.NginxConfigScreen:
+		var model tea.Model
+		model, cmd = m.nginxConfig.Update(msg)
+		m.nginxConfig = model.(screens.NginxConfigModel)
+	case screens.QuickCommandsScreen:
+		var model tea.Model
+		model, cmd = m.quickCommands.Update(msg)
+		m.quickCommands = model.(screens.QuickCommandsModel)
+	case screens.ExecutionScreen:
+		var model tea.Model
+		model, cmd = m.execution.Update(msg)
+		m.execution = model.(screens.ExecutionModel)
+	case screens.SSLOptionsScreen:
+		var model tea.Model
+		model, cmd = m.sslOptions.Update(msg)
+		m.sslOptions = model.(screens.SSLOptionsModel)
+	case screens.SSLManualScreen:
+		var model tea.Model
+		model, cmd = m.sslManual.Update(msg)
+		m.sslManual = model.(screens.SSLManualModel)
+	case screens.EditorSelectionScreen:
+		var model tea.Model
+		model, cmd = m.editorSelection.Update(msg)
+		m.editorSelection = model.(screens.EditorSelectionModel)
+	case screens.RedisConfigScreen:
+		var model tea.Model
+		model, cmd = m.redisConfig.Update(msg)
+		m.redisConfig = model.(screens.RedisConfigModel)
+	case screens.MySQLManagementScreen:
+		var model tea.Model
+		model, cmd = m.mysqlManagement.Update(msg)
+		m.mysqlManagement = model.(screens.MySQLManagementModel)
+	case screens.MySQLPasswordScreen:
+		var model tea.Model
+		model, cmd = m.mysqlPassword.Update(msg)
+		m.mysqlPassword = model.(screens.MySQLPasswordModel)
+	case screens.MySQLPortScreen:
+		var model tea.Model
+		model, cmd = m.mysqlPort.Update(msg)
+		m.mysqlPort = model.(screens.MySQLPortModel)
+	case screens.PostgreSQLManagementScreen:
+		var model tea.Model
+		model, cmd = m.postgresqlManagement.Update(msg)
+		m.postgresqlManagement = model.(screens.PostgreSQLManagementModel)
+	case screens.PostgreSQLPasswordScreen:
+		var model tea.Model
+		model, cmd = m.postgresqlPassword.Update(msg)
+		m.postgresqlPassword = model.(screens.PostgreSQLPasswordModel)
+	case screens.PostgreSQLPortScreen:
+		var model tea.Model
+		model, cmd = m.postgresqlPort.Update(msg)
+		m.postgresqlPort = model.(screens.PostgreSQLPortModel)
+	case screens.PHPFPMManagementScreen:
+		var model tea.Model
+		model, cmd = m.phpfpmManagement.Update(msg)
+		m.phpfpmManagement = model.(screens.PHPFPMManagementModel)
+	case screens.SupervisorManagementScreen:
+		var model tea.Model
+		model, cmd = m.supervisorManagement.Update(msg)
+		m.supervisorManagement = model.(screens.SupervisorManagementModel)
+	case screens.SupervisorXMLRPCConfigScreen:
+		var model tea.Model
+		model, cmd = m.supervisorXMLRPCConfig.Update(msg)
+		m.supervisorXMLRPCConfig = model.(screens.SupervisorXMLRPCConfigModel)
+	case screens.SupervisorAddProgramScreen:
+		var model tea.Model
+		model, cmd = m.supervisorAddProgram.Update(msg)
+		m.supervisorAddProgram = model.(screens.SupervisorAddProgramModel)
+	case screens.FirewallManagementScreen:
+		var model tea.Model
+		model, cmd = m.firewallManagement.Update(msg)
+		m.firewallManagement = model.(screens.FirewallManagementModel)
+	case screens.DragonflyInstallScreen:
+		var model tea.Model
+		model, cmd = m.dragonflyInstall.Update(msg)
+		m.dragonflyInstall = model.(screens.DragonflyInstallModel)
+	case screens.SiteCommandsScreen:
+		var model tea.Model
+		model, cmd = m.siteCommands.Update(msg)
+		m.siteCommands = model.(screens.SiteCommandsModel)
+	case screens.GitManagementScreen:
+		var model tea.Model
+		model, cmd = m.gitManagement.Update(msg)
+		m.gitManagement = model.(screens.GitManagementModel)
+	case screens.LaravelPermissionsScreen:
+		var model tea.Model
+		model, cmd = m.laravelPerms.Update(msg)
+		m.laravelPerms = model.(screens.LaravelPermissionsModel)
+	case screens.NodeVersionScreen:
+		var model tea.Model
+		model, cmd = m.nodeVersion.Update(msg)
+		m.nodeVersion = model.(screens.NodeVersionModel)
+	case screens.PHPVersionScreen:
+		var model tea.Model
+		model, cmd = m.phpVersion.Update(msg)
+		m.phpVersion = model.(screens.PHPVersionModel)
+	case screens.PHPInstallScreen:
+		var model tea.Model
+		model, cmd = m.phpInstall.Update(msg)
+		m.phpInstall = model.(screens.PHPInstallModel)
+	case screens.PHPExtensionsScreen:
+		var model tea.Model
+		model, cmd = m.phpExtensions.Update(msg)
+		m.phpExtensions = model.(screens.PHPExtensionsModel)
+	case screens.FrankenPHPClassicScreen:
+		var model tea.Model
+		model, cmd = m.frankenphpClassic.Update(msg)
+		m.frankenphpClassic = model.(screens.FrankenPHPClassicModel)
+	case screens.FrankenPHPServicesScreen:
+		var model tea.Model
+		model, cmd = m.frankenphpServices.Update(msg)
+		m.frankenphpServices = model.(screens.FrankenPHPServicesModel)
+	case screens.DeveloperToolkitScreen:
+		var model tea.Model
+		model, cmd = m.developerToolkit.Update(msg)
+		m.developerToolkit = model.(screens.DeveloperToolkitModel)
+	case screens.FileBrowserScreen:
+		var model tea.Model
+		model, cmd = m.fileBrowser.Update(msg)
+		m.fileBrowser = model.(screens.FileBrowserModel)
+	case screens.SSHKeyManagementScreen:
+		var model tea.Model
+		model, cmd = m.sshKeyManagement.Update(msg)
+		m.sshKeyManagement = model.(screens.SSHKeyManagementModel)
+	case screens.RedisPasswordScreen:
+		var model tea.Model
+		model, cmd = m.redisPassword.Update(msg)
+		m.redisPassword = model.(screens.RedisPasswordModel)
+	case screens.RedisPortScreen:
+		var model tea.Model
+		model, cmd = m.redisPort.Update(msg)
+		m.redisPort = model.(screens.RedisPortModel)
+	case screens.TextDisplayScreen:
+		var model tea.Model
+		model, cmd = m.textDisplay.Update(msg)
+		m.textDisplay = model.(screens.TextDisplayModel)
+	}
+	return m, cmd
+}
+
 // Update handles all application messages
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -118,7 +300,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
-		
+
 		// Toggle copy mode with Ctrl+Y
 		if msg.String() == "ctrl+y" {
 			m.copyMode = !m.copyMode
@@ -147,7 +329,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.previousScreen = m.currentScreen
 		}
 		m.currentScreen = msg.Screen
-		
+
 		// Handle screen-specific initialization with data
 		if msg.Screen == screens.SetupActionScreen && msg.Data != nil {
 			if data, ok := msg.Data.(map[string]interface{}); ok {
@@ -160,7 +342,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
-		
+
 		// Initialize screen-specific models that need async loading or data
 		var initCmd tea.Cmd
 		switch msg.Screen {
@@ -168,7 +350,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Reinitialize user management on navigation
 			m.userManagement = screens.NewUserManagementModel()
 			initCmd = m.userManagement.Init()
-		
+
 		case screens.UserDetailsScreen:
 			// Initialize user details with user data
 			if msg.Data != nil {
@@ -178,20 +360,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-		
+
 		case screens.AddUserScreen:
 			// Initialize add user screen
 			m.addUser = screens.NewAddUserModel()
 			initCmd = m.addUser.Init()
-		
+
 		case screens.ConfigMenuScreen:
 			// Initialize config menu screen
 			m.configMenu = screens.NewConfigMenuModel()
-		
+
 		case screens.NginxConfigScreen:
 			// Initialize Nginx config screen
 			m.nginxConfig = screens.NewNginxConfigModel()
-		
+
 		case screens.SSLOptionsScreen:
 			// Initialize SSL options screen
 			if msg.Data != nil {
@@ -201,7 +383,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-		
+
 		case screens.SSLManualScreen:
 			// Initialize SSL manual screen
 			if msg.Data != nil {
@@ -211,7 +393,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-		
+
 		case screens.EditorSelectionScreen:
 			// Initialize editor selection screen
 			if msg.Data != nil {
@@ -229,11 +411,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-		
+
 		case screens.RedisConfigScreen:
 			// Initialize Redis config screen
 			m.redisConfig = screens.NewRedisConfigModel()
-		
+
 		case screens.MySQLManagementScreen:
 			// Initialize MySQL management screen
 			m.mysqlManagement = screens.NewMySQLManagementModel()
@@ -245,7 +427,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-		
+
 		case screens.MySQLPasswordScreen:
 			// Initialize MySQL password screen
 			if msg.Data != nil {
@@ -256,7 +438,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-		
+
 		case screens.MySQLPortScreen:
 			// Initialize MySQL port screen
 			if msg.Data != nil {
@@ -268,7 +450,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-		
+
 		case screens.PostgreSQLManagementScreen:
 			// Initialize PostgreSQL management screen
 			m.postgresqlManagement = screens.NewPostgreSQLManagementModel()
@@ -280,7 +462,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-		
+
 		case screens.PostgreSQLPasswordScreen:
 			// Initialize PostgreSQL password screen
 			if msg.Data != nil {
@@ -291,7 +473,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-		
+
 		case screens.PostgreSQLPortScreen:
 			// Initialize PostgreSQL port screen
 			if msg.Data != nil {
@@ -303,11 +485,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-		
+
 		case screens.PHPFPMManagementScreen:
 			// Initialize PHP-FPM management screen
 			m.phpfpmManagement = screens.NewPHPFPMManagementModel()
-		
+
 		case screens.SupervisorManagementScreen:
 			// Initialize Supervisor management screen
 			m.supervisorManagement = screens.NewSupervisorManagementModel()
@@ -319,7 +501,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-		
+
 		case screens.SupervisorXMLRPCConfigScreen:
 			// Initialize XML-RPC config screen
 			if msg.Data != nil {
@@ -329,7 +511,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-		
+
 		case screens.SupervisorAddProgramScreen:
 			// Initialize add program screen
 			if msg.Data != nil {
@@ -340,27 +522,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-		
+
 		case screens.FirewallManagementScreen:
 			// Initialize Firewall management screen
 			m.firewallManagement = screens.NewFirewallManagementModel()
-		
+
 		case screens.DragonflyInstallScreen:
 			// Initialize Dragonfly installation options screen
 			m.dragonflyInstall = screens.NewDragonflyInstallModel()
-		
+
 		case screens.SiteCommandsScreen:
 			// Initialize Site Commands screen
 			m.siteCommands = screens.NewSiteCommandsModel()
-		
+
 		case screens.GitManagementScreen:
 			// Initialize Git management screen
 			m.gitManagement = screens.NewGitManagementModel()
-		
+
 		case screens.LaravelPermissionsScreen:
 			// Initialize Laravel permissions screen
 			m.laravelPerms = screens.NewLaravelPermissionsModel()
-		
+
 		case screens.NodeVersionScreen:
 			// Initialize Node version screen with command type
 			commandType := "npm_install"
@@ -372,7 +554,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			m.nodeVersion = screens.NewNodeVersionModel(commandType)
-		
+
 		case screens.PHPVersionScreen:
 			// Initialize PHP version screen with command type
 			commandType := "composer_install"
@@ -384,23 +566,47 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			m.phpVersion = screens.NewPHPVersionModel(commandType)
-		
+
 		case screens.PHPInstallScreen:
 			// Initialize PHP installation screen
 			m.phpInstall = screens.NewPHPInstallModel()
-		
+
 		case screens.PHPExtensionsScreen:
 			// Initialize PHP extensions screen
 			m.phpExtensions = screens.NewPHPExtensionsModel()
-		
+
 		case screens.FrankenPHPClassicScreen:
 			// Initialize FrankenPHP Classic Mode screen
-			m.frankenphpClassic = screens.NewFrankenPHPClassicModel()
+			if msg.Data != nil {
+				if data, ok := msg.Data.(map[string]interface{}); ok {
+					if site, ok := data["site"].(system.NginxSite); ok {
+						m.frankenphpClassic = screens.NewFrankenPHPClassicModelWithSite(site)
+					} else {
+						m.frankenphpClassic = screens.NewFrankenPHPClassicModel()
+					}
+				} else {
+					m.frankenphpClassic = screens.NewFrankenPHPClassicModel()
+				}
+			} else {
+				m.frankenphpClassic = screens.NewFrankenPHPClassicModel()
+			}
 			initCmd = m.frankenphpClassic.Init()
 
 		case screens.FrankenPHPServicesScreen:
 			// Initialize FrankenPHP Services screen
-			m.frankenphpServices = screens.NewFrankenPHPServicesModel()
+			if msg.Data != nil {
+				if data, ok := msg.Data.(map[string]interface{}); ok {
+					if filterDir, ok := data["filterDir"].(string); ok {
+						m.frankenphpServices = screens.NewFrankenPHPServicesModelWithFilter(filterDir)
+					} else {
+						m.frankenphpServices = screens.NewFrankenPHPServicesModel()
+					}
+				} else {
+					m.frankenphpServices = screens.NewFrankenPHPServicesModel()
+				}
+			} else {
+				m.frankenphpServices = screens.NewFrankenPHPServicesModel()
+			}
 			initCmd = m.frankenphpServices.Init()
 
 		case screens.DeveloperToolkitScreen:
@@ -422,7 +628,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.fileBrowser = screens.NewFileBrowserModel()
 			}
-		
+
 		case screens.SSHKeyManagementScreen:
 			// Initialize SSH Key Management screen
 			if msg.Data != nil {
@@ -430,7 +636,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.sshKeyManagement = screens.NewSSHKeyManagementModel(username)
 				}
 			}
-		
+
+		case screens.TextDisplayScreen:
+			// Initialize Text Display screen
+			if msg.Data != nil {
+				if data, ok := msg.Data.(map[string]interface{}); ok {
+					title, _ := data["title"].(string)
+					content, _ := data["content"].(string)
+					rs, _ := data["returnScreen"].(screens.ScreenType)
+					m.textDisplay = screens.NewTextDisplayModel(title, content, rs)
+				}
+			}
+			initCmd = m.textDisplay.Init()
+
 		case screens.RedisPasswordScreen:
 			// Initialize Redis password screen
 			if msg.Data != nil {
@@ -441,7 +659,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-		
+
 		case screens.RedisPortScreen:
 			// Initialize Redis port screen
 			if msg.Data != nil {
@@ -452,7 +670,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-		
+
 		case screens.ConfigEditorScreen:
 			// Initialize config editor (add site or edit site)
 			if msg.Data != nil {
@@ -472,7 +690,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
-		
+
 		// Send window size to the new screen immediately after navigation
 		if m.width > 0 && m.height > 0 {
 			sizeMsg := tea.WindowSizeMsg{Width: m.width, Height: m.height}
@@ -480,7 +698,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(initCmd, func() tea.Msg { return sizeMsg })
 		}
 		return m, initCmd
-	
+
 	case screens.ExecutionStartMsg:
 		// Determine return screen based on current screen (before changing it)
 		returnScreen := screens.MainMenuScreen
@@ -490,17 +708,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			returnScreen = screens.SetupMenuScreen
 		case screens.SetupMenuScreen:
 			returnScreen = screens.SetupMenuScreen
-		
+
 		// Quick commands
 		case screens.QuickCommandsScreen:
 			returnScreen = screens.QuickCommandsScreen
-		
+
 		// FrankenPHP screens
 		case screens.FrankenPHPServicesScreen:
 			returnScreen = screens.FrankenPHPServicesScreen
 		case screens.FrankenPHPClassicScreen:
 			returnScreen = screens.FrankenPHPClassicScreen
-		
+
 		// Site commands and related
 		case screens.SiteCommandsScreen:
 			returnScreen = screens.SiteCommandsScreen
@@ -512,7 +730,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			returnScreen = screens.SiteCommandsScreen
 		case screens.PHPVersionScreen:
 			returnScreen = screens.SiteCommandsScreen
-		
+
 		// Config menu screens
 		case screens.ConfigMenuScreen:
 			returnScreen = screens.ConfigMenuScreen
@@ -530,27 +748,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			returnScreen = screens.SupervisorManagementScreen
 		case screens.FirewallManagementScreen:
 			returnScreen = screens.FirewallManagementScreen
-		
+
 		// PHP screens
 		case screens.PHPInstallScreen:
 			returnScreen = screens.PHPInstallScreen
 		case screens.PHPExtensionsScreen:
 			returnScreen = screens.PHPExtensionsScreen
-		
+
 		// SSL screens
 		case screens.SSLOptionsScreen:
 			returnScreen = screens.SSLOptionsScreen
-		
+
 		// Dragonfly
 		case screens.DragonflyInstallScreen:
 			returnScreen = screens.DragonflyInstallScreen
 		}
-		
+
 		// Switch to execution screen and start execution
 		m.currentScreen = screens.ExecutionScreen
 		m.execution = screens.NewExecutionModel(msg.Command, msg.Description, returnScreen)
 		initCmd := m.execution.Init()
-		
+
 		// Send window size
 		if m.width > 0 && m.height > 0 {
 			sizeMsg := tea.WindowSizeMsg{Width: m.width, Height: m.height}
@@ -563,7 +781,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.currentScreen = screens.ExecutionScreen
 		m.execution = screens.NewExecutionModel(msg.Command, msg.Description, screens.DeveloperToolkitScreen)
 		initCmd := m.execution.Init()
-		
+
 		// Send window size
 		if m.width > 0 && m.height > 0 {
 			sizeMsg := tea.WindowSizeMsg{Width: m.width, Height: m.height}
@@ -572,243 +790,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, initCmd
 
 	case screens.EditorCompleteMsg:
-		// Editor finished - go back to previous screen
-		// The BackMsg will be handled by the navigation stack
-		return m, func() tea.Msg {
+		// Delegate to current screen FIRST so it gets the message (crucial for picking up temp files)
+		m, cmd = m.updateCurrentScreen(msg)
+		// Then return back
+		return m, tea.Sequence(cmd, func() tea.Msg {
 			return screens.BackMsg{}
-		}
+		})
 
 	case screens.QuitMsg:
 		return m, tea.Quit
 	}
 
 	// Delegate to current screen
-	var cmd tea.Cmd
-	switch m.currentScreen {
-	case screens.SplashScreen:
-		var model tea.Model
-		model, cmd = m.splash.Update(msg)
-		m.splash = model.(screens.SplashModel)
-
-	case screens.MainMenuScreen:
-		var model tea.Model
-		model, cmd = m.mainMenu.Update(msg)
-		m.mainMenu = model.(screens.MainMenuModel)
-
-	case screens.SetupMenuScreen:
-		var model tea.Model
-		model, cmd = m.setupMenu.Update(msg)
-		m.setupMenu = model.(screens.SetupMenuModel)
-
-	case screens.SetupActionScreen:
-		var model tea.Model
-		model, cmd = m.setupAction.Update(msg)
-		m.setupAction = model.(screens.SetupActionModel)
-
-	case screens.InstalledAppsScreen:
-		var model tea.Model
-		model, cmd = m.installedApps.Update(msg)
-		m.installedApps = model.(screens.InstalledAppsModel)
-
-	case screens.UserManagementScreen:
-		var model tea.Model
-		model, cmd = m.userManagement.Update(msg)
-		m.userManagement = model.(screens.UserManagementModel)
-
-	case screens.UserDetailsScreen:
-		var model tea.Model
-		model, cmd = m.userDetails.Update(msg)
-		m.userDetails = model.(screens.UserDetailsModel)
-
-	case screens.AddUserScreen:
-		var model tea.Model
-		model, cmd = m.addUser.Update(msg)
-		m.addUser = model.(screens.AddUserModel)
-
-	case screens.ConfigMenuScreen:
-		var model tea.Model
-		model, cmd = m.configMenu.Update(msg)
-		m.configMenu = model.(screens.ConfigMenuModel)
-	
-	case screens.NginxConfigScreen:
-		var model tea.Model
-		model, cmd = m.nginxConfig.Update(msg)
-		m.nginxConfig = model.(screens.NginxConfigModel)
-
-	case screens.QuickCommandsScreen:
-		var model tea.Model
-		model, cmd = m.quickCommands.Update(msg)
-		m.quickCommands = model.(screens.QuickCommandsModel)
-
-	case screens.ExecutionScreen:
-		var model tea.Model
-		model, cmd = m.execution.Update(msg)
-		m.execution = model.(screens.ExecutionModel)
-	
-	case screens.ConfigEditorScreen:
-		// Determine which sub-screen to update based on flag
-		if m.configEditorActive == "add_site" {
-			var model tea.Model
-			model, cmd = m.addSite.Update(msg)
-			m.addSite = model.(screens.AddSiteModel)
-		} else if m.configEditorActive == "site_details" {
-			var model tea.Model
-			model, cmd = m.siteDetails.Update(msg)
-			m.siteDetails = model.(screens.SiteDetailsModel)
-		}
-	
-	case screens.SSLOptionsScreen:
-		var model tea.Model
-		model, cmd = m.sslOptions.Update(msg)
-		m.sslOptions = model.(screens.SSLOptionsModel)
-	
-	case screens.SSLManualScreen:
-		var model tea.Model
-		model, cmd = m.sslManual.Update(msg)
-		m.sslManual = model.(screens.SSLManualModel)
-	
-	case screens.EditorSelectionScreen:
-		var model tea.Model
-		model, cmd = m.editorSelection.Update(msg)
-		m.editorSelection = model.(screens.EditorSelectionModel)
-	
-	case screens.RedisConfigScreen:
-		var model tea.Model
-		model, cmd = m.redisConfig.Update(msg)
-		m.redisConfig = model.(screens.RedisConfigModel)
-	
-	case screens.MySQLManagementScreen:
-		var model tea.Model
-		model, cmd = m.mysqlManagement.Update(msg)
-		m.mysqlManagement = model.(screens.MySQLManagementModel)
-	
-	case screens.MySQLPasswordScreen:
-		var model tea.Model
-		model, cmd = m.mysqlPassword.Update(msg)
-		m.mysqlPassword = model.(screens.MySQLPasswordModel)
-	
-	case screens.MySQLPortScreen:
-		var model tea.Model
-		model, cmd = m.mysqlPort.Update(msg)
-		m.mysqlPort = model.(screens.MySQLPortModel)
-	
-	case screens.PostgreSQLManagementScreen:
-		var model tea.Model
-		model, cmd = m.postgresqlManagement.Update(msg)
-		m.postgresqlManagement = model.(screens.PostgreSQLManagementModel)
-	
-	case screens.PostgreSQLPasswordScreen:
-		var model tea.Model
-		model, cmd = m.postgresqlPassword.Update(msg)
-		m.postgresqlPassword = model.(screens.PostgreSQLPasswordModel)
-	
-	case screens.PostgreSQLPortScreen:
-		var model tea.Model
-		model, cmd = m.postgresqlPort.Update(msg)
-		m.postgresqlPort = model.(screens.PostgreSQLPortModel)
-	
-	case screens.PHPFPMManagementScreen:
-		var model tea.Model
-		model, cmd = m.phpfpmManagement.Update(msg)
-		m.phpfpmManagement = model.(screens.PHPFPMManagementModel)
-	
-	case screens.SupervisorManagementScreen:
-		var model tea.Model
-		model, cmd = m.supervisorManagement.Update(msg)
-		m.supervisorManagement = model.(screens.SupervisorManagementModel)
-	
-	case screens.SupervisorXMLRPCConfigScreen:
-		var model tea.Model
-		model, cmd = m.supervisorXMLRPCConfig.Update(msg)
-		m.supervisorXMLRPCConfig = model.(screens.SupervisorXMLRPCConfigModel)
-	
-	case screens.SupervisorAddProgramScreen:
-		var model tea.Model
-		model, cmd = m.supervisorAddProgram.Update(msg)
-		m.supervisorAddProgram = model.(screens.SupervisorAddProgramModel)
-	
-	case screens.FirewallManagementScreen:
-		var model tea.Model
-		model, cmd = m.firewallManagement.Update(msg)
-		m.firewallManagement = model.(screens.FirewallManagementModel)
-	
-	case screens.DragonflyInstallScreen:
-		var model tea.Model
-		model, cmd = m.dragonflyInstall.Update(msg)
-		m.dragonflyInstall = model.(screens.DragonflyInstallModel)
-	
-	case screens.SiteCommandsScreen:
-		var model tea.Model
-		model, cmd = m.siteCommands.Update(msg)
-		m.siteCommands = model.(screens.SiteCommandsModel)
-	
-	case screens.GitManagementScreen:
-		var model tea.Model
-		model, cmd = m.gitManagement.Update(msg)
-		m.gitManagement = model.(screens.GitManagementModel)
-	
-	case screens.LaravelPermissionsScreen:
-		var model tea.Model
-		model, cmd = m.laravelPerms.Update(msg)
-		m.laravelPerms = model.(screens.LaravelPermissionsModel)
-	
-	case screens.NodeVersionScreen:
-		var model tea.Model
-		model, cmd = m.nodeVersion.Update(msg)
-		m.nodeVersion = model.(screens.NodeVersionModel)
-	
-	case screens.PHPVersionScreen:
-		var model tea.Model
-		model, cmd = m.phpVersion.Update(msg)
-		m.phpVersion = model.(screens.PHPVersionModel)
-	
-	case screens.PHPInstallScreen:
-		var model tea.Model
-		model, cmd = m.phpInstall.Update(msg)
-		m.phpInstall = model.(screens.PHPInstallModel)
-	
-	case screens.PHPExtensionsScreen:
-		var model tea.Model
-		model, cmd = m.phpExtensions.Update(msg)
-		m.phpExtensions = model.(screens.PHPExtensionsModel)
-	
-	case screens.FrankenPHPClassicScreen:
-		var model tea.Model
-		model, cmd = m.frankenphpClassic.Update(msg)
-		m.frankenphpClassic = model.(screens.FrankenPHPClassicModel)
-
-	case screens.FrankenPHPServicesScreen:
-		var model tea.Model
-		model, cmd = m.frankenphpServices.Update(msg)
-		m.frankenphpServices = model.(screens.FrankenPHPServicesModel)
-
-	case screens.DeveloperToolkitScreen:
-		var model tea.Model
-		model, cmd = m.developerToolkit.Update(msg)
-		m.developerToolkit = model.(screens.DeveloperToolkitModel)
-
-	case screens.FileBrowserScreen:
-		var model tea.Model
-		model, cmd = m.fileBrowser.Update(msg)
-		m.fileBrowser = model.(screens.FileBrowserModel)
-	
-	case screens.SSHKeyManagementScreen:
-		var model tea.Model
-		model, cmd = m.sshKeyManagement.Update(msg)
-		m.sshKeyManagement = model.(screens.SSHKeyManagementModel)
-	
-	case screens.RedisPasswordScreen:
-		var model tea.Model
-		model, cmd = m.redisPassword.Update(msg)
-		m.redisPassword = model.(screens.RedisPasswordModel)
-	
-	case screens.RedisPortScreen:
-		var model tea.Model
-		model, cmd = m.redisPort.Update(msg)
-		m.redisPort = model.(screens.RedisPortModel)
-	}
-
-	return m, cmd
+	return m.updateCurrentScreen(msg)
 }
 
 // View renders the current screen
@@ -910,6 +904,8 @@ func (m Model) View() string {
 		view = m.redisPassword.View()
 	case screens.RedisPortScreen:
 		view = m.redisPort.View()
+	case screens.TextDisplayScreen:
+		view = m.textDisplay.View()
 	default:
 		view = "Unknown screen"
 	}

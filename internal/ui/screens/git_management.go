@@ -30,16 +30,18 @@ const (
 
 // GitInfo holds information about the current git repository
 type GitInfo struct {
-	IsRepo     bool
-	RemoteURL  string
-	RemoteName string
-	Branch     string
-	LastCommit string
-	CommitMsg  string
-	HasChanges bool
-	Ahead      int
-	Behind     int
-	SystemUser string // meta.systemuser config value
+	IsRepo           bool
+	DubiousOwnership bool
+	ErrorMsg         string
+	RemoteURL        string
+	RemoteName       string
+	Branch           string
+	LastCommit       string
+	CommitMsg        string
+	HasChanges       bool
+	Ahead            int
+	Behind           int
+	SystemUser       string // meta.systemuser config value
 }
 
 // GitAction represents a git action menu item
@@ -102,6 +104,13 @@ func NewGitManagementModel() GitManagementModel {
 
 	actions := []GitAction{
 		{ID: "refresh", Name: "Refresh Git Info", Description: "Refresh repository information"},
+	}
+
+	if gitInfo.DubiousOwnership {
+		actions = append(actions, GitAction{ID: "fix_ownership", Name: "Fix Git Ownership Detection", Description: "Add this directory to safe.directory config"})
+	}
+
+	actions = append(actions, []GitAction{
 		{ID: "test_connection", Name: "Test Git Connection", Description: "Test SSH connection to GitHub/GitLab"},
 		{ID: "clone_repo", Name: "Clone Git Repo", Description: "Clone a repository into this directory"},
 		{ID: "add_remote", Name: "Add/Setup Git Remote", Description: "Add a new git remote URL"},
@@ -112,7 +121,7 @@ func NewGitManagementModel() GitManagementModel {
 		{ID: "git_status", Name: "Git Status", Description: "Show detailed git status"},
 		{ID: "set_system_user", Name: "Set System User", Description: "Set the user for git operations in this repo"},
 		{ID: "back", Name: "← Back to Site Commands", Description: "Return to site commands menu"},
-	}
+	}...)
 
 	// Get user manager and available users
 	um := system.NewUserManager()
@@ -144,7 +153,15 @@ func getGitInfo() GitInfo {
 
 	// Check if we're in a git repo
 	cmd := exec.Command("git", "rev-parse", "--is-inside-work-tree")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
+		errStr := stderr.String()
+		if strings.Contains(errStr, "dubious ownership") {
+			info.IsRepo = false
+			info.DubiousOwnership = true
+			return info
+		}
 		info.IsRepo = false
 		return info
 	}
@@ -576,8 +593,14 @@ func (m GitManagementModel) executeGitOp() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		script := fmt.Sprintf(`su - %s -c 'cd "%s" && git remote remove %s 2>&1'`,
-			m.gitOpUser, m.currentDir, m.gitInfo.RemoteName)
+		script := fmt.Sprintf(`
+echo "Removing remote as user %s..."
+
+sudo -i -u %s bash << 'EOF'
+cd "%s"
+git remote remove %s 2>&1
+EOF
+`, m.gitOpUser, m.gitOpUser, m.currentDir, m.gitInfo.RemoteName)
 
 		cmd := exec.Command("bash", "-c", script)
 		output, err := cmd.CombinedOutput()
@@ -596,32 +619,48 @@ func (m GitManagementModel) executeGitOp() (tea.Model, tea.Cmd) {
 	}
 
 	// For pull, fetch, status - build script with ssh-agent
-	script := fmt.Sprintf(`su - %s -c '
+	script := fmt.Sprintf(`
+echo "Running git %s as user %s..."
+echo ""
+
+sudo -i -u %s bash << 'EOF'
 cd "%s"
 
 # Start ssh-agent
 eval $(ssh-agent -s) > /dev/null 2>&1
 
-# Add all available keys
-for key in ~/.ssh/id_ed25519 ~/.ssh/id_rsa ~/.ssh/id_ecdsa ; do
-    if [ -f "$key" ]; then
-        ssh-add "$key" 2>/dev/null || true
+# Function to add keys safely
+add_ssh_keys() {
+    local added=0
+    # Search for private keys in ~/.ssh
+    for key in ~/.ssh/id_ed25519 ~/.ssh/id_rsa ~/.ssh/id_ecdsa ~/.ssh/id_dsa ~/.ssh/id_*; do
+        if [[ -f "$key" && ! "$key" == *.pub && ! "$key" == *known_hosts* && ! "$key" == *config* && ! "$key" == *authorized_keys* ]]; then
+            # Only add if it seems like a private key
+            if head -n 1 "$key" | grep -q "PRIVATE KEY" 2>/dev/null; then
+                ssh-add "$key" 2>/dev/null && ((added++))
+            fi
+        fi
+    done
+    
+    if [[ $added -gt 0 ]]; then
+        echo "✓ Loaded $added SSH key(s)"
     fi
-done
+}
 
-# Also add any other id_* keys
-for key in ~/.ssh/id_* ; do
-    if [ -f "$key" ] && [ "${key}" = "${key%%.pub}" ]; then
-        ssh-add "$key" 2>/dev/null || true
-    fi
-done
+add_ssh_keys
 
 # Run git command
+echo ""
+echo "Executing: %s"
 %s 2>&1
+EXIT_CODE=$?
 
 # Cleanup
 ssh-agent -k > /dev/null 2>&1 || true
-'`, m.gitOpUser, m.currentDir, gitCmd)
+
+exit $EXIT_CODE
+EOF
+`, m.gitOpAction, m.gitOpUser, m.gitOpUser, m.currentDir, gitCmd, gitCmd)
 
 	m.state = GitStateMenu
 	m.gitOpForm = nil
@@ -871,42 +910,6 @@ func (m GitManagementModel) prepareAndClone() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Get the target user's UID and GID
-	userInfo, err := m.userManager.GetUser(m.cloneUser)
-	if err != nil {
-		m.state = GitStateMenu
-		m.err = fmt.Errorf("failed to get user info: %v", err)
-		m.cloneForm = nil
-		return m, nil
-	}
-
-	// Check current directory ownership using stat command
-	statCmd := exec.Command("stat", "-c", "%U:%G", m.currentDir)
-	statOutput, _ := statCmd.Output()
-	currentOwner := strings.TrimSpace(string(statOutput))
-
-	// If the directory is not owned by the clone user, change ownership
-	expectedOwner := fmt.Sprintf("%s:%s", m.cloneUser, m.cloneUser)
-	if currentOwner != expectedOwner && currentOwner != "" {
-		// Change ownership of the directory to the clone user
-		chownCmd := exec.Command("chown", "-R", fmt.Sprintf("%d:%d", userInfo.UID, userInfo.GID), m.currentDir)
-		if output, err := chownCmd.CombinedOutput(); err != nil {
-			m.state = GitStateMenu
-			m.err = fmt.Errorf("failed to change directory ownership: %v\n%s", err, string(output))
-			m.cloneForm = nil
-			return m, nil
-		}
-
-		// Also set proper permissions (rwx for owner, rx for group and others)
-		chmodCmd := exec.Command("chmod", "755", m.currentDir)
-		if output, err := chmodCmd.CombinedOutput(); err != nil {
-			m.state = GitStateMenu
-			m.err = fmt.Errorf("failed to set directory permissions: %v\n%s", err, string(output))
-			m.cloneForm = nil
-			return m, nil
-		}
-	}
-
 	// Now execute the clone using the execution screen for animation
 	return m.executeClone()
 }
@@ -922,24 +925,21 @@ func (m GitManagementModel) executeClone() (tea.Model, tea.Cmd) {
 
 	// Build a script that starts ssh-agent, adds the keys, and clones the repo
 	// After cloning, set proper permissions for web server access
+	// Run the clone as the specified user
 	script := fmt.Sprintf(`
-#!/bin/bash
-
-TARGET_DIR="%s"
-CLONE_URL="%s"
-CLONE_USER="%s"
-WEB_GROUP="www-data"
-
-echo ""
 echo "══════════════════════════════════════════════════════════"
 echo "  Git Clone"
 echo "══════════════════════════════════════════════════════════"
 echo ""
-echo "  Repository:  $CLONE_URL"
-echo "  Directory:   $TARGET_DIR"
-echo "  User:        $CLONE_USER"
+echo "  Repository:  %s"
+echo "  Directory:   %s"
+echo "  User:        %s"
 echo ""
 echo "══════════════════════════════════════════════════════════"
+
+TARGET_DIR="%s"
+CLONE_USER="%s"
+CLONE_URL="%s"
 
 # Ensure target directory exists
 if [ ! -d "$TARGET_DIR" ]; then
@@ -951,42 +951,39 @@ fi
 echo ""
 echo "  [1/4] Setting up SSH authentication..."
 
-# Run the clone as the specified user
-sudo -u "$CLONE_USER" bash -c '
+sudo -i -u "$CLONE_USER" bash << 'EOF'
+cd "$TARGET_DIR"
+
+# Start ssh-agent
 eval $(ssh-agent -s) > /dev/null 2>&1
 
-KEYS_ADDED=0
-for key in ~/.ssh/id_ed25519 ~/.ssh/id_rsa ~/.ssh/id_ecdsa ; do
-    if [ -f "$key" ]; then
-        ssh-add "$key" 2>/dev/null && KEYS_ADDED=$((KEYS_ADDED+1))
+# Function to add keys safely
+add_ssh_keys() {
+    local added=0
+    for key in ~/.ssh/id_ed25519 ~/.ssh/id_rsa ~/.ssh/id_ecdsa ~/.ssh/id_dsa ~/.ssh/id_*; do
+        if [[ -f "$key" && ! "$key" == *.pub && ! "$key" == *known_hosts* && ! "$key" == *config* && ! "$key" == *authorized_keys* ]]; then
+            if head -n 1 "$key" | grep -q "PRIVATE KEY" 2>/dev/null; then
+                ssh-add "$key" 2>/dev/null && ((added++))
+            fi
+        fi
+    done
+    if [[ $added -gt 0 ]]; then
+        echo "        ✓ Loaded $added SSH key(s)"
     fi
-done
+}
 
-for key in ~/.ssh/id_* ; do
-    if [ -f "$key" ] && [ "${key}" = "${key%%.pub}" ]; then
-        ssh-add "$key" 2>/dev/null && KEYS_ADDED=$((KEYS_ADDED+1))
-    fi
-done
-
-if [ $KEYS_ADDED -gt 0 ]; then
-    echo "        ✓ Loaded $KEYS_ADDED SSH key(s)"
-else
-    echo "        ⚠ No SSH keys found"
-fi
+add_ssh_keys
 
 echo ""
 echo "  [2/4] Cloning repository..."
 echo ""
 
-cd "'"$TARGET_DIR"'"
-git clone --progress "'"$CLONE_URL"'" . 2>&1
-
+git clone --progress "$CLONE_URL" . 2>&1
 CLONE_EXIT=$?
 
 ssh-agent -k > /dev/null 2>&1 || true
-
 exit $CLONE_EXIT
-'
+EOF
 
 CLONE_EXIT=$?
 
@@ -994,14 +991,15 @@ if [ $CLONE_EXIT -eq 0 ]; then
     echo ""
     echo "        ✓ Repository cloned successfully"
     echo ""
-    echo "  [3/4] Setting ownership ($CLONE_USER:$WEB_GROUP)..."
+    echo "  [3/4] Setting ownership..."
     
+    WEB_GROUP="www-data"
     if getent group "$WEB_GROUP" > /dev/null 2>&1; then
         chown -R "$CLONE_USER:$WEB_GROUP" "$TARGET_DIR"
-        echo "        ✓ Ownership set"
+        echo "        ✓ Ownership set to $CLONE_USER:$WEB_GROUP"
     else
         chown -R "$CLONE_USER:$CLONE_USER" "$TARGET_DIR"
-        echo "        ✓ Ownership set (www-data group not found)"
+        echo "        ✓ Ownership set to $CLONE_USER:$CLONE_USER"
     fi
     
     echo ""
@@ -1046,7 +1044,7 @@ else
     echo ""
     exit $CLONE_EXIT
 fi
-`, m.currentDir, m.cloneURL, m.cloneUser)
+`, m.cloneURL, m.currentDir, m.cloneUser, m.currentDir, m.cloneUser, m.cloneURL)
 
 	m.state = GitStateMenu
 	m.cloneForm = nil
@@ -1073,54 +1071,46 @@ func (m GitManagementModel) runTestConnection() (tea.Model, tea.Cmd) {
 	}
 
 	// Build a script that starts ssh-agent, adds the key, and tests the connection
-	// This is necessary because ssh-agent is per-session and won't persist across su commands
-	var script string
-	if selectedKey == "auto" || selectedKey == "" {
-		// Auto-detect: Start ssh-agent and add all keys, then test
-		script = fmt.Sprintf(`su - %s -c '
+	script := fmt.Sprintf(`
+echo "Testing connection to GitHub for user %s..."
+
+sudo -i -u %s bash << 'EOF'
 # Start ssh-agent
 eval $(ssh-agent -s) > /dev/null 2>&1
 
-# Add all available keys (ignore errors for keys with passphrases)
-for key in ~/.ssh/id_* ; do
-    if [ -f "$key" ] && [ ! -f "$key.pub" ] || [ "${key%%.pub}" != "$key" ]; then
-        continue
+# Function to add keys safely
+add_ssh_keys() {
+    local added=0
+    # Search for private keys in ~/.ssh
+    # We look for files that don't end in .pub and are actually files
+    for key in ~/.ssh/id_ed25519 ~/.ssh/id_rsa ~/.ssh/id_ecdsa ~/.ssh/id_dsa ~/.ssh/id_*; do
+        if [[ -f "$key" && ! "$key" == *.pub && ! "$key" == *known_hosts* && ! "$key" == *config* && ! "$key" == *authorized_keys* ]]; then
+            # Check if it looks like a private key (has a header)
+            if head -n 1 "$key" | grep -q "PRIVATE KEY" 2>/dev/null; then
+                ssh-add "$key" 2>/dev/null && ((added++))
+            fi
+        fi
+    done
+    
+    if [[ $added -gt 0 ]]; then
+        echo "✓ Loaded $added SSH key(s)"
     fi
-    # Only add private keys (files without .pub extension that have a matching .pub file)
-    if [ -f "$key" ] && [ -f "$key.pub" ]; then
-        ssh-add "$key" 2>/dev/null || true
-    fi
-done
+}
 
-# Also try common key names without .pub check
-for key in ~/.ssh/id_ed25519 ~/.ssh/id_rsa ~/.ssh/id_ecdsa ; do
-    if [ -f "$key" ]; then
-        ssh-add "$key" 2>/dev/null || true
-    fi
-done
+add_ssh_keys
 
 # Test connection
+echo ""
+echo "Executing: ssh -T git@github.com"
 ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes -T git@github.com 2>&1
+EXIT_CODE=$?
 
 # Cleanup
 ssh-agent -k > /dev/null 2>&1 || true
-'`, selectedUser)
-	} else {
-		// Use specific key: Start ssh-agent, add the specific key, then test
-		script = fmt.Sprintf(`su - %s -c '
-# Start ssh-agent
-eval $(ssh-agent -s) > /dev/null 2>&1
 
-# Add the specific key
-ssh-add "%s" 2>/dev/null
-
-# Test connection
-ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes -i "%s" -T git@github.com 2>&1
-
-# Cleanup
-ssh-agent -k > /dev/null 2>&1 || true
-'`, selectedUser, selectedKey, selectedKey)
-	}
+exit $EXIT_CODE
+EOF
+`, selectedUser, selectedUser)
 
 	cmd := exec.Command("bash", "-c", script)
 	output, err := cmd.CombinedOutput()
@@ -1206,6 +1196,19 @@ func (m GitManagementModel) executeAction() (tea.Model, tea.Cmd) {
 		m.currentDir, _ = os.Getwd()
 		m.success = "✓ Git info refreshed"
 
+	case "fix_ownership":
+		cmd := exec.Command("git", "config", "--global", "--add", "safe.directory", m.currentDir)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			m.err = fmt.Errorf("failed to fix ownership: %s", strings.TrimSpace(string(output)))
+		} else {
+			m.success = "✓ Directory added to safe.directory. Git info refreshed."
+			// Rebuild the whole model state to refresh actions and info
+			newModel := NewGitManagementModel()
+			m.gitInfo = newModel.gitInfo
+			m.actions = newModel.actions
+			m.cursor = 0
+		}
+
 	case "test_connection":
 		// Show user selection form
 		if len(m.availableUsers) == 0 {
@@ -1248,9 +1251,15 @@ func (m GitManagementModel) executeAction() (tea.Model, tea.Cmd) {
 			m.err = fmt.Errorf("no users available")
 			return m, nil
 		}
-		m.state = GitStateGitOpForm
-		m.gitOpForm = m.buildGitOpForm("change_remote")
-		return m, m.gitOpForm.Init()
+		// Use system user if configured, otherwise show system user setting form
+		if m.gitInfo.SystemUser != "" {
+			m.gitOpUser = m.gitInfo.SystemUser
+			m.gitOpAction = "change_remote"
+			return m.executeGitOp()
+		}
+		m.state = GitStateSetSystemUserForm
+		m.systemUserForm = m.buildSetSystemUserForm()
+		return m, m.systemUserForm.Init()
 
 	case "remove_remote":
 		if m.gitInfo.RemoteName == "" {
@@ -1261,54 +1270,60 @@ func (m GitManagementModel) executeAction() (tea.Model, tea.Cmd) {
 			m.err = fmt.Errorf("no users available")
 			return m, nil
 		}
-		m.state = GitStateGitOpForm
-		m.gitOpForm = m.buildGitOpForm("remove_remote")
-		return m, m.gitOpForm.Init()
+		// Use system user if configured, otherwise show system user setting form
+		if m.gitInfo.SystemUser != "" {
+			m.gitOpUser = m.gitInfo.SystemUser
+			m.gitOpAction = "remove_remote"
+			return m.executeGitOp()
+		}
+		m.state = GitStateSetSystemUserForm
+		m.systemUserForm = m.buildSetSystemUserForm()
+		return m, m.systemUserForm.Init()
 
 	case "git_pull":
 		if len(m.availableUsers) == 0 {
 			m.err = fmt.Errorf("no users available")
 			return m, nil
 		}
-		// Use system user if configured, otherwise show form
+		// Use system user if configured, otherwise show system user setting form
 		if m.gitInfo.SystemUser != "" {
 			m.gitOpUser = m.gitInfo.SystemUser
 			m.gitOpAction = "git_pull"
 			return m.executeGitOp()
 		}
-		m.state = GitStateGitOpForm
-		m.gitOpForm = m.buildGitOpForm("git_pull")
-		return m, m.gitOpForm.Init()
+		m.state = GitStateSetSystemUserForm
+		m.systemUserForm = m.buildSetSystemUserForm()
+		return m, m.systemUserForm.Init()
 
 	case "git_fetch":
 		if len(m.availableUsers) == 0 {
 			m.err = fmt.Errorf("no users available")
 			return m, nil
 		}
-		// Use system user if configured, otherwise show form
+		// Use system user if configured, otherwise show system user setting form
 		if m.gitInfo.SystemUser != "" {
 			m.gitOpUser = m.gitInfo.SystemUser
 			m.gitOpAction = "git_fetch"
 			return m.executeGitOp()
 		}
-		m.state = GitStateGitOpForm
-		m.gitOpForm = m.buildGitOpForm("git_fetch")
-		return m, m.gitOpForm.Init()
+		m.state = GitStateSetSystemUserForm
+		m.systemUserForm = m.buildSetSystemUserForm()
+		return m, m.systemUserForm.Init()
 
 	case "git_status":
 		if len(m.availableUsers) == 0 {
 			m.err = fmt.Errorf("no users available")
 			return m, nil
 		}
-		// Use system user if configured, otherwise show form
+		// Use system user if configured, otherwise show system user setting form
 		if m.gitInfo.SystemUser != "" {
 			m.gitOpUser = m.gitInfo.SystemUser
 			m.gitOpAction = "git_status"
 			return m.executeGitOp()
 		}
-		m.state = GitStateGitOpForm
-		m.gitOpForm = m.buildGitOpForm("git_status")
-		return m, m.gitOpForm.Init()
+		m.state = GitStateSetSystemUserForm
+		m.systemUserForm = m.buildSetSystemUserForm()
+		return m, m.systemUserForm.Init()
 
 	case "set_system_user":
 		if !m.gitInfo.IsRepo {
@@ -1373,8 +1388,15 @@ func (m GitManagementModel) renderMenu() string {
 	infoLines = append(infoLines, "")
 
 	if !m.gitInfo.IsRepo {
-		infoLines = append(infoLines, m.theme.WarningStyle.Render("⚠ Not a Git repository"))
-		infoLines = append(infoLines, m.theme.DescriptionStyle.Render("  Navigate to a directory with a Git repository"))
+		if m.gitInfo.DubiousOwnership {
+			infoLines = append(infoLines, m.theme.ErrorStyle.Render("⚠ Git repository detected with dubious ownership"))
+			infoLines = append(infoLines, m.theme.DescriptionStyle.Render("  Git refuses to work in this folder because it's owned by another user."))
+			infoLines = append(infoLines, m.theme.DescriptionStyle.Render("  To fix, run: git config --global --add safe.directory "+m.currentDir))
+			infoLines = append(infoLines, m.theme.DescriptionStyle.Render("  Or run ravact with 'sudo' to manage this repository."))
+		} else {
+			infoLines = append(infoLines, m.theme.WarningStyle.Render("⚠ Not a Git repository"))
+			infoLines = append(infoLines, m.theme.DescriptionStyle.Render("  Navigate to a directory with a Git repository"))
+		}
 	} else {
 		// Branch
 		branchLabel := m.theme.Label.Render("Branch: ")
@@ -1482,7 +1504,7 @@ func (m GitManagementModel) renderMenu() string {
 	content := lipgloss.JoinVertical(lipgloss.Left, sections...)
 
 	// Add border and center
-	bordered := m.theme.BorderStyle.Render(content)
+	bordered := m.theme.RenderBox(content)
 
 	return lipgloss.Place(
 		m.width,
@@ -1525,7 +1547,7 @@ func (m GitManagementModel) renderTestConnectionForm() string {
 		Padding(paddingV, paddingH).
 		Render(content)
 
-	bordered := m.theme.BorderStyle.Render(paddedContent)
+	bordered := m.theme.RenderBox(paddedContent)
 	return lipgloss.Place(
 		m.width,
 		m.height,
@@ -1572,7 +1594,7 @@ func (m GitManagementModel) renderCloneForm() string {
 		Padding(paddingV, paddingH).
 		Render(content)
 
-	bordered := m.theme.BorderStyle.Render(paddedContent)
+	bordered := m.theme.RenderBox(paddedContent)
 	return lipgloss.Place(
 		m.width,
 		m.height,
@@ -1636,7 +1658,7 @@ func (m GitManagementModel) renderConfirmClone() string {
 		Padding(paddingV, paddingH).
 		Render(content)
 
-	bordered := m.theme.BorderStyle.Render(paddedContent)
+	bordered := m.theme.RenderBox(paddedContent)
 	return lipgloss.Place(
 		m.width,
 		m.height,
@@ -1698,7 +1720,7 @@ func (m GitManagementModel) renderGitOpForm() string {
 		Padding(paddingV, paddingH).
 		Render(content)
 
-	bordered := m.theme.BorderStyle.Render(paddedContent)
+	bordered := m.theme.RenderBox(paddedContent)
 	return lipgloss.Place(
 		m.width,
 		m.height,
@@ -1746,7 +1768,7 @@ func (m GitManagementModel) renderSetSystemUserForm() string {
 		Padding(paddingV, paddingH).
 		Render(content)
 
-	bordered := m.theme.BorderStyle.Render(paddedContent)
+	bordered := m.theme.RenderBox(paddedContent)
 	return lipgloss.Place(
 		m.width,
 		m.height,
@@ -1793,7 +1815,7 @@ func (m GitManagementModel) renderAddRemoteForm() string {
 		Padding(paddingV, paddingH).
 		Render(content)
 
-	bordered := m.theme.BorderStyle.Render(paddedContent)
+	bordered := m.theme.RenderBox(paddedContent)
 	return lipgloss.Place(
 		m.width,
 		m.height,
@@ -1843,7 +1865,7 @@ func (m GitManagementModel) renderConfirmRemote() string {
 		Padding(paddingV, paddingH).
 		Render(content)
 
-	bordered := m.theme.BorderStyle.Render(paddedContent)
+	bordered := m.theme.RenderBox(paddedContent)
 	return lipgloss.Place(
 		m.width,
 		m.height,

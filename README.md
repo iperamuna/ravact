@@ -28,6 +28,14 @@
   - SSL removal and configuration
 - **Editor Integration** - Edit configs with nano or vi directly in Ravact
 
+### 🐘 FrankenPHP Manager (NEW)
+- **Multi-Site Management** - Run multiple isolated FrankenPHP instances
+- **Support for All Modes** - Classic (PHP-FPM replacement), Worker (Laravel Octane-like), and Mercure (Real-time)
+- **Automated Setup** - Creates Systemd services, Caddyfiles, and Nginx proxy configs
+- **Performance Tuning** - Configure thread counts, worker numbers, and PHP.ini settings via TUI
+- **Service Control** - Start, stop, restart, view logs, and monitor status
+- **Nginx Integration** - One-click generation of Nginx upstream configurations for your FrankenPHP sites
+
 ### 🔧 Service Configuration
 - **Redis Cache** - Configure authentication, port, test connections
 - **MySQL Database** - Change root password, configure port, create databases, list databases, service management
@@ -254,7 +262,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## 📊 Project Status
 
-**Version**: 0.3.1
+**Version**: 0.3.2
 
 **All Features Implemented**:
 - ✅ Complete software setup automation (13+ packages)

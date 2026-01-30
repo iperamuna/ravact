@@ -154,53 +154,39 @@ frankenphp-site disable site1.caddy
 systemctl reload frankenphp
 ```
 
-### Multi-Site Example
-
-Run three sites with different modes:
-
-```caddy
-# Site 1: Classic Mode (simple blog)
-blog.example.com {
-    root * /var/www/blog
-    php_server
-    file_server
-}
-
-# Site 2: Worker Mode (Laravel e-commerce)
-shop.example.com {
-    root * /var/www/shop/public
-    php_server {
-        workers 8
-        worker_script index.php
-    }
-    @notStatic {
-        not path *.css *.js *.png *.jpg *.gif *.svg *.ico
-        file { try_files {path} /index.php }
-    }
-    rewrite @notStatic /index.php
-    file_server
-}
-
-# Site 3: Mercure Mode (real-time dashboard)
-dashboard.example.com {
-    root * /var/www/dashboard/public
-    mercure {
-        publisher_jwt { key "secret123" algorithm HS256 }
-        subscriber_jwt { key "secret123" algorithm HS256 }
-    }
-    php_server {
-        workers 4
-        worker_script index.php
-    }
-    @notStatic {
-        not path *.css *.js *.png *.jpg *.gif *.svg *.ico
-        not path /.well-known/mercure
-        file { try_files {path} /index.php }
-    }
-    rewrite @notStatic /index.php
-    file_server
-}
 ```
+
+## Managing Services with Ravact
+
+Ravact provides a comprehensive TUI for managing your FrankenPHP services.
+
+### 1. Service List
+Navigate to **FrankenPHP Manager** -> **Manage Services**. You will see a list of all detected FrankenPHP services (detected by `frankenphp-*.service` files).
+
+- **Status Indicators**: 
+  - `●` Running
+  - `○` Stopped
+  - `✗` Failed
+
+### 2. Service Actions
+Select a service and press **Enter** to see available actions:
+
+- **Start / Stop / Restart**: Control the service lifecycle.
+- **Enable / Disable**: Configure auto-start on boot.
+- **View Status**: Shows the full systemd status output.
+- **View Logs**: Tails the last 100 lines of the service journal (`journalctl`).
+- **Edit Configuration**:
+  - **Form Mode**: Edit common settings (Port, User, PHP.ini) in a guided form.
+  - **Editor Mode**: Directly edit the `Caddyfile`, `Systemd Service`, or `Nginx Config` in your preferred editor (nano/vi).
+- **View Nginx Config**: Generates and displays the correct Nginx configuration block to proxy traffic to this service (supports both Socket and Port modes).
+- **Delete Service**: Completely removes the service, configuration files, and data directories (with confirmation).
+
+### 3. Nginx Reverse Proxy Integration
+Ravact makes it easy to put FrankenPHP behind Nginx. 
+1. Go to **View Nginx Config** in the service actions.
+2. The correct `upstream` and `server` block will be generated based on your service's connection type (Unix Socket or TCP Port).
+3. Press **c** to copy the config to your clipboard.
+4. Paste it into your Nginx site configuration (e.g., via **Nginx Manager** in Ravact).
 
 ## Setting Up a New Site
 

@@ -2,6 +2,8 @@ package screens
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -19,12 +21,15 @@ type SiteCommandItem struct {
 
 // SiteCommandsModel represents the site commands menu screen
 type SiteCommandsModel struct {
-	theme  *theme.Theme
-	width  int
-	height int
-	cursor int
-	items  []SiteCommandItem
-	cwd    string // Current working directory
+	theme          *theme.Theme
+	width          int
+	height         int
+	cursor         int
+	items          []SiteCommandItem
+	cwd            string // Current working directory
+	systemUser     string // from git config meta.systemuser
+	availableUsers []string
+	selectingUser  bool
 }
 
 // NewSiteCommandsModel creates a new site commands menu model
@@ -80,10 +85,22 @@ func NewSiteCommandsModel() SiteCommandsModel {
 		},
 	}
 
+	// Get available users for selection
+	um := system.NewUserManager()
+	allUsers, _ := um.GetAllUsers()
+	var availableUsers []string
+	for _, user := range allUsers {
+		if user.UID >= 1000 || user.Username == "www-data" {
+			availableUsers = append(availableUsers, user.Username)
+		}
+	}
+
 	return SiteCommandsModel{
-		theme:  theme.DefaultTheme(),
-		cursor: 0,
-		items:  items,
+		theme:          theme.DefaultTheme(),
+		cursor:         0,
+		items:          items,
+		systemUser:     getGitSystemUser(),
+		availableUsers: availableUsers,
 	}
 }
 
@@ -121,7 +138,30 @@ func (m SiteCommandsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "enter", " ":
+			if m.selectingUser {
+				m.systemUser = m.availableUsers[m.cursor]
+				m.selectingUser = false
+				m.cursor = 0
+
+				// Try to save to git config if it's a git repo
+				cmd := exec.Command("git", "rev-parse", "--is-inside-work-tree")
+				if err := cmd.Run(); err == nil {
+					exec.Command("git", "config", "meta.systemuser", m.systemUser).Run()
+				}
+
+				// Now execute the action that triggered this
+				// For now we just return to menu, user can press enter again
+				return m, nil
+			}
 			selectedItem := m.items[m.cursor]
+
+			// If it's composer_install_fpcli and systemUser is missing, trigger selection
+			if selectedItem.ID == "composer_install_fpcli" && m.systemUser == "" {
+				m.selectingUser = true
+				m.cursor = 0
+				return m, nil
+			}
+
 			return m.executeAction(selectedItem)
 		}
 	}
@@ -139,6 +179,15 @@ func (m SiteCommandsModel) executeAction(item SiteCommandItem) (SiteCommandsMode
 
 	case "frankenphp":
 		return m, func() tea.Msg {
+			cwd, _ := os.Getwd()
+			if IdentifyExistingFrankenPHPSetupForDir(cwd) {
+				return NavigateMsg{
+					Screen: FrankenPHPServicesScreen,
+					Data: map[string]interface{}{
+						"filterDir": cwd,
+					},
+				}
+			}
 			return NavigateMsg{Screen: FrankenPHPClassicScreen}
 		}
 
@@ -268,6 +317,17 @@ $COMPOSER_CMD install
 echo ""
 echo "✓ Composer install completed!"
 `
+
+		// Wrap command in sudo heredoc if system user is set
+		if m.systemUser != "" {
+			cwd, _ := os.Getwd()
+			script = fmt.Sprintf(`sudo -i -u %s bash << 'EOF'
+cd "%s"
+%s
+EOF
+`, m.systemUser, cwd, script)
+		}
+
 		return m, func() tea.Msg {
 			return ExecutionStartMsg{
 				Command:     script,
@@ -284,6 +344,11 @@ echo "✓ Composer install completed!"
 func (m SiteCommandsModel) View() string {
 	if m.width == 0 {
 		return "Loading..."
+	}
+
+	// Handle user selection state
+	if m.selectingUser {
+		return m.viewUserSelection()
 	}
 
 	// Header
@@ -338,8 +403,8 @@ func (m SiteCommandsModel) View() string {
 		help,
 	)
 
-	// Add border and center
-	bordered := m.theme.BorderStyle.Render(content)
+	// Add border and center using RenderBox for consistency and wrapping
+	bordered := m.theme.RenderBox(content)
 
 	return lipgloss.Place(
 		m.width,
@@ -348,4 +413,35 @@ func (m SiteCommandsModel) View() string {
 		lipgloss.Center,
 		bordered,
 	)
+}
+
+// viewUserSelection renders the user selection screen
+func (m SiteCommandsModel) viewUserSelection() string {
+	header := m.theme.Title.Render("Select System User")
+
+	description := m.theme.DescriptionStyle.Render("Select a user to run Composer commands as.")
+
+	var items []string
+	items = append(items, "")
+	for i, user := range m.availableUsers {
+		cursor := "  "
+		if i == m.cursor {
+			cursor = m.theme.KeyStyle.Render("▶ ")
+		}
+
+		var renderedItem string
+		if i == m.cursor {
+			renderedItem = m.theme.SelectedItem.Render(fmt.Sprintf("%s%s", cursor, user))
+		} else {
+			renderedItem = m.theme.MenuItem.Render(fmt.Sprintf("%s%s", cursor, user))
+		}
+		items = append(items, renderedItem)
+	}
+
+	menu := lipgloss.JoinVertical(lipgloss.Left, items...)
+	help := m.theme.Help.Render("↑/↓: Navigate • Enter: Select • Esc: Back")
+
+	content := lipgloss.JoinVertical(lipgloss.Left, header, "", description, menu, "", help)
+	bordered := m.theme.RenderBox(content)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
 }

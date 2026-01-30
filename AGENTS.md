@@ -142,7 +142,7 @@ sudo ./ravact
 UI works but setup features require Linux. Use Multipass:
 
 ```bash
-multipass launch 24.04 --name ravact-test --memory 4G --cpus 2 --disk 20G
+multipass launch 22.04 --name ravact-test --memory 4G --cpus 2 --disk 20G
 GOOS=linux GOARCH=arm64 go build -o ravact-linux ./cmd/ravact
 multipass transfer ravact-linux ravact-test:/home/ubuntu/ravact
 multipass shell ravact-test

@@ -2,6 +2,36 @@
 
 [← Back to Documentation](../README.md)
 
+## [0.3.2] - 2026-01-30
+
+### Added
+- **FrankenPHP Service Management Enhancements**
+  - **Nginx Config Generation**: New "View Nginx Config" action generates specific upstream configuration for both Socket and Port modes
+  - **Auto-Detection**: Nginx config view automatically detects connection type and pre-fills socket paths or ports
+  - **Editor Integration**: New "Edit Configuration (Editor)" action with file selection menu (Caddyfile, Service, Nginx)
+  - **Service Deletion**: Full cleanup workflow to delete services along with their config and data directories
+  - **Copy Support**: Press `c` to copy generated Nginx configs to clipboard
+
+- **Documentation**
+  - Updated FrankenPHP Guide with comprehensive "Managing Services" section
+  - Documented new TUI workspaces and Nginx integration workflow
+
+### Changed
+- **FrankenPHP Directory Structure**:
+  - Improved standard layout: `/var/lib/caddy/{sitekey}/` now contains `config`, `data`, and `tls` subdirectories
+  - Better permission handling: Recursive ownership fixes during setup and service restarts to ensure Caddy reads configs correctly
+
+### Fixed
+- **Nginx Config Template**: Fixed syntax error in generated `upstream` blocks
+- **TUI Interactions**: 
+  - Fixed "View Nginx Config" form getting stuck (input blocking issue)
+  - Fixed compiler errors in service screen logic
+
+### Test
+- Added unit tests for systemd service file parsing logic
+
+---
+
 ## [0.3.1] - 2026-01-26
 
 ### Added

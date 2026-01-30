@@ -39,18 +39,22 @@ type SiteDetailsModel struct {
 // NewSiteDetailsModel creates a new site details model
 func NewSiteDetailsModel(site system.NginxSite) SiteDetailsModel {
 	nginxManager := system.NewNginxManager()
-	
+
 	// Build actions list based on site's SSL status
 	actions := []string{
 		"Toggle Enable/Disable",
 	}
-	
+
 	if !site.HasSSL {
 		actions = append(actions, "Add SSL Certificate (Let's Encrypt)")
 	} else {
 		actions = append(actions, "Remove SSL Certificate")
 	}
-	
+
+	if site.HasPHP {
+		actions = append(actions, "Convert to FrankenPHP Classic Mode")
+	}
+
 	actions = append(actions,
 		"Test Nginx Configuration",
 		"Reload Nginx",
@@ -58,7 +62,7 @@ func NewSiteDetailsModel(site system.NginxSite) SiteDetailsModel {
 		"Open in Editor",
 		"← Back to Sites",
 	)
-	
+
 	return SiteDetailsModel{
 		theme:        theme.DefaultTheme(),
 		nginxManager: nginxManager,
@@ -115,7 +119,7 @@ func (m SiteDetailsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m SiteDetailsModel) executeAction() (SiteDetailsModel, tea.Cmd) {
 	m.err = nil
 	m.success = ""
-	
+
 	// Map cursor position to action based on current actions list
 	actionName := m.actions[m.cursor]
 
@@ -205,6 +209,17 @@ func (m SiteDetailsModel) executeAction() (SiteDetailsModel, tea.Cmd) {
 			}
 		}
 
+	case actionName == "Convert to FrankenPHP Classic Mode":
+		// Navigate to FrankenPHP classic screen with site data
+		return m, func() tea.Msg {
+			return NavigateMsg{
+				Screen: FrankenPHPClassicScreen,
+				Data: map[string]interface{}{
+					"site": m.site,
+				},
+			}
+		}
+
 	case actionName == "Open in Editor":
 		// Navigate to editor selection screen
 		return m, func() tea.Msg {
@@ -239,7 +254,7 @@ func (m SiteDetailsModel) View() string {
 	info = append(info, m.theme.Label.Render("Domain:      ")+m.theme.MenuItem.Render(m.site.Domain))
 	info = append(info, m.theme.Label.Render("Root Dir:    ")+m.theme.MenuItem.Render(m.site.RootDir))
 	info = append(info, m.theme.Label.Render("Config Path: ")+m.theme.DescriptionStyle.Render(m.site.ConfigPath))
-	
+
 	// Status
 	statusText := ""
 	statusStyle := m.theme.DescriptionStyle
@@ -251,7 +266,7 @@ func (m SiteDetailsModel) View() string {
 		statusStyle = m.theme.WarningStyle
 	}
 	info = append(info, m.theme.Label.Render("Status:      ")+statusStyle.Render(statusText))
-	
+
 	// SSL
 	sslText := "No"
 	if m.site.HasSSL {
@@ -328,7 +343,7 @@ func (m SiteDetailsModel) View() string {
 	content := lipgloss.JoinVertical(lipgloss.Left, sections...)
 
 	// Add border and center
-	bordered := m.theme.BorderStyle.Render(content)
+	bordered := m.theme.RenderBox(content)
 
 	return lipgloss.Place(
 		m.width,

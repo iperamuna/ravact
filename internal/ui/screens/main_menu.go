@@ -292,8 +292,8 @@ func (m MainMenuModel) View() string {
 		help,
 	)
 
-	// Add border and center
-	bordered := m.theme.BorderStyle.Render(content)
+	// Add border and center using RenderBox for consistency	// Add border and center using RenderBox for consistency and wrapping
+	bordered := m.theme.RenderBox(content)
 
 	return lipgloss.Place(
 		m.width,

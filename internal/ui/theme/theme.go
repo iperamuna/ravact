@@ -49,6 +49,9 @@ type Theme struct {
 
 	// Huh form theme
 	HuhTheme *huh.Theme
+
+	// Layout
+	AppWidth int
 }
 
 // DefaultTheme returns the default color scheme
@@ -119,6 +122,8 @@ func DefaultTheme() *Theme {
 		}
 	}
 
+	t.AppWidth = 90
+
 	// Define styles
 	t.Title = lipgloss.NewStyle().
 		Foreground(t.Primary).
@@ -165,17 +170,21 @@ func DefaultTheme() *Theme {
 		Padding(0, 1)
 
 	// Use appropriate border style based on terminal capabilities
+	// Use fixed width for consistency across the app
+	borderWidth := t.AppWidth + 6 // Account for borders (2) and padding (4)
 	if caps.Unicode && !caps.IsBasicTerm {
 		t.BorderStyle = lipgloss.NewStyle().
 			BorderStyle(lipgloss.RoundedBorder()).
 			BorderForeground(t.BorderColor).
-			Padding(1, 2)
+			Padding(1, 2).
+			Width(borderWidth)
 	} else {
 		// ASCII-safe border for basic terminals
 		t.BorderStyle = lipgloss.NewStyle().
 			BorderStyle(lipgloss.NormalBorder()).
 			BorderForeground(t.BorderColor).
-			Padding(1, 2)
+			Padding(1, 2).
+			Width(borderWidth)
 	}
 
 	t.Help = lipgloss.NewStyle().
@@ -221,6 +230,17 @@ func DefaultTheme() *Theme {
 	t.HuhTheme = createHuhTheme(t)
 
 	return t
+}
+
+// RenderBox wraps content to AppWidth and applies the BorderStyle.
+// This ensures consistent width and text wrapping across all screens.
+func (t *Theme) RenderBox(content string) string {
+	// Wrap the content to AppWidth
+	// lipgloss.NewStyle().Width(w).Render(text) handles multi-line strings correctly
+	wrapped := lipgloss.NewStyle().Width(t.AppWidth).Render(content)
+
+	// Apply the border style
+	return t.BorderStyle.Render(wrapped)
 }
 
 // createHuhTheme creates a custom huh theme matching the app's color scheme

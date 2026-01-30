@@ -225,7 +225,7 @@ func (m UserManagementModel) View() string {
 			m.theme.InfoStyle.Render("Loading users and groups...") + "\n\n" +
 			m.theme.Help.Render("Please wait...")
 		
-		bordered := m.theme.BorderStyle.Render(loadingMsg)
+		bordered := m.theme.RenderBox(loadingMsg)
 		return lipgloss.Place(
 			m.width,
 			m.height,
@@ -252,7 +252,7 @@ func (m UserManagementModel) View() string {
 			m.theme.DescriptionStyle.Render(m.err.Error()) + "\n\n" +
 			m.theme.Help.Render(helpText)
 		
-		bordered := m.theme.BorderStyle.Render(errorMsg)
+		bordered := m.theme.RenderBox(errorMsg)
 		return lipgloss.Place(
 			m.width,
 			m.height,
@@ -312,7 +312,7 @@ func (m UserManagementModel) View() string {
 	)
 
 	// Add border and center
-	bordered := m.theme.BorderStyle.Render(fullContent)
+	bordered := m.theme.RenderBox(fullContent)
 
 	return lipgloss.Place(
 		m.width,

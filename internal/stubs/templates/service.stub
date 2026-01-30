@@ -1,0 +1,34 @@
+[Unit]
+Description=FrankenPHP classic mode ({{ID}})
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User={{USER}}
+Group={{GROUP}}
+WorkingDirectory={{WORKING_DIRECTORY}}
+
+Environment=APP_ENV=production
+Environment=APP_BASE_PATH={{APP_BASE_PATH}}
+Environment="XDG_CONFIG_HOME=/var/lib/caddy/{{ID}}/config"
+Environment="XDG_DATA_HOME=/var/lib/caddy/{{ID}}/data"
+
+RuntimeDirectory=frankenphp
+RuntimeDirectoryMode=0755
+
+{{PRE_START}}ExecStart={{BINARY}} run --config {{CADDYFILE}}
+{{POST_START}}
+Restart=always
+RestartSec=2
+LimitNOFILE=65535
+TimeoutStopSec=10
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
