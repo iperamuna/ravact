@@ -57,6 +57,7 @@ type Model struct {
 	phpVersion             screens.PHPVersionModel
 	phpInstall             screens.PHPInstallModel
 	phpExtensions          screens.PHPExtensionsModel
+	laravelQueue           screens.LaravelQueueModel
 	frankenphpClassic      screens.FrankenPHPClassicModel
 	frankenphpServices     screens.FrankenPHPServicesModel
 	quickCommands          screens.QuickCommandsModel
@@ -248,6 +249,10 @@ func (m Model) updateCurrentScreen(msg tea.Msg) (Model, tea.Cmd) {
 		var model tea.Model
 		model, cmd = m.phpExtensions.Update(msg)
 		m.phpExtensions = model.(screens.PHPExtensionsModel)
+	case screens.LaravelQueueScreen:
+		var model tea.Model
+		model, cmd = m.laravelQueue.Update(msg)
+		m.laravelQueue = model.(screens.LaravelQueueModel)
 	case screens.FrankenPHPClassicScreen:
 		var model tea.Model
 		model, cmd = m.frankenphpClassic.Update(msg)
@@ -575,6 +580,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Initialize PHP extensions screen
 			m.phpExtensions = screens.NewPHPExtensionsModel()
 
+		case screens.LaravelQueueScreen:
+			projectPath := ""
+			systemUser := ""
+			if msg.Data != nil {
+				if data, ok := msg.Data.(map[string]interface{}); ok {
+					projectPath, _ = data["projectPath"].(string)
+					systemUser, _ = data["systemUser"].(string)
+				}
+			}
+			m.laravelQueue = screens.NewLaravelQueueModel(projectPath, systemUser)
+			initCmd = m.laravelQueue.Init()
+
 		case screens.FrankenPHPClassicScreen:
 			// Initialize FrankenPHP Classic Mode screen
 			if msg.Data != nil {
@@ -728,6 +745,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			returnScreen = screens.LaravelPermissionsScreen
 		case screens.NodeVersionScreen:
 			returnScreen = screens.SiteCommandsScreen
+		case screens.LaravelQueueScreen:
+			returnScreen = screens.LaravelQueueScreen
 		case screens.PHPVersionScreen:
 			returnScreen = screens.SiteCommandsScreen
 
@@ -889,6 +908,8 @@ func (m Model) View() string {
 		view = m.phpInstall.View()
 	case screens.PHPExtensionsScreen:
 		view = m.phpExtensions.View()
+	case screens.LaravelQueueScreen:
+		view = m.laravelQueue.View()
 	case screens.FrankenPHPClassicScreen:
 		view = m.frankenphpClassic.View()
 

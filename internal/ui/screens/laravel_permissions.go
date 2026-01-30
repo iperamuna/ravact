@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/iperamuna/ravact/internal/system"
 	"github.com/iperamuna/ravact/internal/ui/theme"
@@ -42,6 +43,20 @@ type LaravelPermissionsModel struct {
 	// User selection state
 	availableUsers []string
 	selectingUser  bool
+
+	// Scheduler Form
+	schedulerForm *huh.Form
+	schedUser     string
+	schedExecutor string
+	isScheduler   bool
+}
+
+// Check scheduler existence helper
+func checkSchedulerExists(user, path string) (bool, string) {
+	cmd := fmt.Sprintf("sudo crontab -u %s -l 2>/dev/null | grep -F '%s' | grep -F 'schedule:run' || true", user, path)
+	out, _ := exec.Command("bash", "-c", cmd).Output()
+	res := strings.TrimSpace(string(out))
+	return res != "", res
 }
 
 // NewLaravelPermissionsModel creates a new Laravel permissions model
@@ -191,6 +206,11 @@ func (m *LaravelPermissionsModel) buildActions() []LaravelPermAction {
 			Description: "Add scheduler cron job for web server user",
 		},
 		{
+			ID:          "setup_queue",
+			Name:        "Setup Queue Services",
+			Description: "Manage Laravel queue workers (Systemd)",
+		},
+		{
 			ID:          "back",
 			Name:        "← Back to Site Commands",
 			Description: "Return to site commands menu",
@@ -252,6 +272,18 @@ func (m LaravelPermissionsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// Handle scheduler form
+		if m.isScheduler && m.schedulerForm != nil {
+			form, cmd := m.schedulerForm.Update(msg)
+			if f, ok := form.(*huh.Form); ok {
+				m.schedulerForm = f
+			}
+			if m.schedulerForm.State == huh.StateCompleted {
+				return m.saveScheduler()
+			}
+			return m, cmd
+		}
+
 		// Handle env selection state
 		if m.envState == "select_env" {
 			return m.updateEnvSelection(msg)
@@ -371,54 +403,94 @@ func (m LaravelPermissionsModel) executeEnvCreation() (tea.Model, tea.Cmd) {
 	}
 }
 
-// setupScheduler adds the Laravel scheduler cron job to www-data's crontab
+// setupScheduler initiates the scheduler setup form
 func (m LaravelPermissionsModel) setupScheduler() (tea.Model, tea.Cmd) {
-	projectPath := m.projectPath
+	// Defaults
+	m.schedUser = m.systemUser
+	if m.schedUser == "" {
+		m.schedUser = "www-data"
+	}
+	m.schedExecutor = "/usr/local/bin/fpcli"
 
-	// Command to:
-	// 1. Check if cron entry already exists
-	// 2. If not, add it to www-data's crontab
+	// Check existing
+	exists, entry := checkSchedulerExists(m.schedUser, m.projectPath)
+	title := "Setup Laravel Scheduler"
+	desc := "Configure the cron job for artisan schedule:run"
+
+	if exists {
+		title = "Update Laravel Scheduler"
+		desc = fmt.Sprintf("Existing entry found:\n%s", entry)
+		// Try to parse existing Executor if possible?
+		// For now default is fine, user can edit.
+	}
+
+	m.schedulerForm = huh.NewForm(
+		huh.NewGroup(
+			huh.NewNote().
+				Title(title).
+				Description(desc),
+			huh.NewInput().
+				Key("user").
+				Title("Run As User").
+				Value(&m.schedUser),
+			huh.NewInput().
+				Key("executor").
+				Title("Executor Path").
+				Description("Path to fpcli or php binary").
+				Value(&m.schedExecutor),
+		),
+	).WithTheme(m.theme.HuhTheme)
+
+	m.isScheduler = true
+	return m, m.schedulerForm.Init()
+}
+
+// saveScheduler executes the cron update
+func (m LaravelPermissionsModel) saveScheduler() (tea.Model, tea.Cmd) {
+	m.isScheduler = false
+	projectPath := m.projectPath
+	user := m.schedUser
+	executor := m.schedExecutor
+
+	// Cron entry format: * * * * * executor project/artisan schedule:run >> /dev/null 2>&1
+	// Actually typical Laravel cron is: * * * * * cd /path && php artisan ...
+	// But user wants: * * * * * {execution path} {laravelfolder}/artisan schedule:run >> /dev/null 2>&1
+
+	cronEntry := fmt.Sprintf("* * * * * %s %s/artisan schedule:run >> /dev/null 2>&1", executor, projectPath)
+
 	command := fmt.Sprintf(`#!/bin/bash
 set -e
 
+CRON_USER="%s"
 PROJECT_PATH="%s"
-CRON_ENTRY="* * * * * cd ${PROJECT_PATH} && php artisan schedule:run >> /dev/null 2>&1"
-CRON_USER="www-data"
+NEW_ENTRY="%s"
 
-echo "Setting up Laravel Scheduler for: ${PROJECT_PATH}"
-echo "Cron user: ${CRON_USER}"
+echo "Configuring Scheduler for: ${PROJECT_PATH}"
+echo "User: ${CRON_USER}"
+echo "Entry: ${NEW_ENTRY}"
 echo ""
 
-# Check if the cron entry already exists
-EXISTING=$(crontab -u ${CRON_USER} -l 2>/dev/null | grep -F "${PROJECT_PATH}" | grep -F "schedule:run" || true)
+# Removing existing entries for this project to avoid duplicates
+# We grep -v based on project path to remove old ones
+(crontab -u ${CRON_USER} -l 2>/dev/null | grep -vF "${PROJECT_PATH}" || true) > /tmp/cron.${CRON_USER}.tmp
 
-if [ -n "$EXISTING" ]; then
-    echo "⚠ Scheduler cron job already exists for this project:"
-    echo "  $EXISTING"
-    echo ""
-    echo "No changes made."
-else
-    # Add the cron entry to www-data's crontab
-    (crontab -u ${CRON_USER} -l 2>/dev/null || true; echo "${CRON_ENTRY}") | crontab -u ${CRON_USER} -
-    
-    echo "✓ Laravel scheduler cron job added successfully!"
-    echo ""
-    echo "Cron entry:"
-    echo "  ${CRON_ENTRY}"
-    echo ""
-    echo "Current www-data crontab:"
-    crontab -u ${CRON_USER} -l 2>/dev/null || echo "  (empty)"
-fi
+# Add new entry
+echo "${NEW_ENTRY}" >> /tmp/cron.${CRON_USER}.tmp
 
+# Install new crontab
+crontab -u ${CRON_USER} /tmp/cron.${CRON_USER}.tmp
+rm /tmp/cron.${CRON_USER}.tmp
+
+echo "✓ Scheduler updated successfully!"
 echo ""
-echo "To verify scheduler is working, run:"
-echo "  php artisan schedule:list"
-`, projectPath)
+echo "Current crontab for ${CRON_USER}:"
+crontab -u ${CRON_USER} -l
+`, user, projectPath, cronEntry)
 
 	return m, func() tea.Msg {
 		return ExecutionStartMsg{
-			Command:     command,
-			Description: "Setup Laravel Scheduler (www-data crontab)",
+			Command:     fmt.Sprintf("sudo bash -c '%s'", command), // Run as root to change other user's crontab
+			Description: "Update Laravel Scheduler",
 		}
 	}
 }
@@ -464,6 +536,19 @@ func (m LaravelPermissionsModel) executeAction() (LaravelPermissionsModel, tea.C
 		return model.(LaravelPermissionsModel), cmd
 	}
 
+	// Handle queue setup
+	if action.ID == "setup_queue" {
+		return m, func() tea.Msg {
+			return NavigateMsg{
+				Screen: LaravelQueueScreen,
+				Data: map[string]interface{}{
+					"projectPath": m.projectPath,
+					"systemUser":  m.systemUser,
+				},
+			}
+		}
+	}
+
 	// Handle Change User
 	if action.ID == "change_user" {
 		m.selectingUser = true
@@ -502,6 +587,11 @@ func (m LaravelPermissionsModel) View() string {
 	// Handle user selection state
 	if m.selectingUser {
 		return m.viewUserSelection()
+	}
+
+	// Handle scheduler form
+	if m.isScheduler {
+		return m.viewSchedulerForm()
 	}
 
 	// Handle env selection states
@@ -740,4 +830,13 @@ func (m LaravelPermissionsModel) viewUserSelection() string {
 	content := lipgloss.JoinVertical(lipgloss.Left, header, "", description, menu, "", help)
 	bordered := m.theme.RenderBox(content)
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
+}
+
+func (m LaravelPermissionsModel) viewSchedulerForm() string {
+	header := m.theme.Title.Render("Configure Scheduler")
+	form := m.schedulerForm.View()
+	help := m.theme.Help.Render("Enter: Save • Esc: Cancel")
+
+	content := lipgloss.JoinVertical(lipgloss.Left, header, "", form, "", help)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.theme.RenderBox(content))
 }

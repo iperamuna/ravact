@@ -49,6 +49,7 @@ const (
 	FileBrowserScreen
 	SSHKeyManagementScreen
 	TextDisplayScreen
+	LaravelQueueScreen
 )
 
 // NavigateMsg is sent when navigating between screens

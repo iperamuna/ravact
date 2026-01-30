@@ -2,6 +2,33 @@
 
 [← Back to Documentation](../README.md)
 
+## [0.4.0] - 2026-01-31
+
+### Added
+- **Laravel Queue Management** - Dedicated interface for managing systemd queue workers
+  - **Service Templates** - Supports multiple worker instances (e.g., `queue@1`, `queue@2`) via systemd templates
+  - **Creation Wizard** - Form-based setup for Service Label, User, Executor, Queue Name, and Process Count
+  - **Bulk Actions** - Start, Stop, Restart applies to all worker instances automatically
+  - **Log Viewing** - Live journalctl tail for all worker instances
+  
+- **Laravel Scheduler Configuration**
+  - **Interactive Setup** - New form to configure Scheduler User and Executor path
+  - **Smart Detection** - Detects existing Cron entries and allows editing
+  - **Duplicate Prevention** - Automatically cleans up old cron entries for the project before adding new ones
+
+- **Laravel App Menu**
+  - Added "Setup Queue Services" to the menu
+  - Enhanced "Setup Laravel Scheduler" with the new interactive form
+
+### Changed
+- **FrankenPHP Service Management**
+  - Services now utilize systemd templates for better scalability
+
+### Fixed
+- **Laravel Permissions** - Improved validation for user selection and path handling
+
+---
+
 ## [0.3.5] - 2026-01-31
 
 ### Added

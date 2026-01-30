@@ -28,7 +28,13 @@
   - SSL removal and configuration
 - **Editor Integration** - Edit configs with nano or vi directly in Ravact
 
-### 🐘 FrankenPHP Manager (NEW)
+### 🚀 Laravel App Management (NEW)
+- **Queue Worker Management** - Create, scale, and monitor systemd queue workers
+- **Scheduler Configuration** - Interactive setup for Laravel Cron scheduler
+- **Environment Management** - create .env, generate keys, manage permissions
+- **Developer Tools** - Artisan commands, permission fixes, and log viewing
+
+### 🐘 FrankenPHP Manager
 - **Multi-Site Management** - Run multiple isolated FrankenPHP instances
 - **Support for All Modes** - Classic (PHP-FPM replacement), Worker (Laravel Octane-like), and Mercure (Real-time)
 - **Automated Setup** - Creates Systemd services, Caddyfiles, and Nginx proxy configs
@@ -262,7 +268,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## 📊 Project Status
 
-**Version**: 0.3.5
+**Version**: 0.4.0
 
 **All Features Implemented**:
 - ✅ Complete software setup automation (13+ packages)
