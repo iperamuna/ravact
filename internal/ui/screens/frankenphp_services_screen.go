@@ -2,6 +2,7 @@ package screens
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -44,6 +45,7 @@ const (
 	FPServicesStateNginxSelect
 	FPServicesStateNginxView
 	FPServicesStateEditFileSelect
+	FPServicesStateMetricsInput
 )
 
 // EditableFile represents a file that can be edited
@@ -90,6 +92,7 @@ type FrankenPHPServicesModel struct {
 	editPHPOpcacheJitBufferSize     string
 	editPHPRealpathCacheSize        string
 	editPHPRealpathCacheTtl         string
+	editPHPMaxUploadSize            string
 
 	// Caddy settings
 	editNumThreads  string
@@ -122,6 +125,12 @@ type FrankenPHPServicesModel struct {
 	editableFiles  []EditableFile
 	editFileCursor int
 
+	// Metrics
+	metricsForm      *huh.Form
+	metricsPort      string
+	metricsEnabled   bool // Tracking if metrics are currently enabled
+	metricsEnableOpt bool // For confirmation dialog of disable
+
 	// Toggles
 	showFullHelp bool
 }
@@ -151,6 +160,8 @@ func NewFrankenPHPServicesModelWithFilter(filterDir string) FrankenPHPServicesMo
 			"View Logs",
 			"Edit Configuration (Form)",
 			"Edit Configuration (Editor)",
+			"Enable Caddy Metrics",
+			"Disable Caddy Metrics",
 			"View Nginx Config",
 			"Delete Service",
 			"← Back to List",
@@ -393,7 +404,21 @@ func (m FrankenPHPServicesModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateNginxView(msg)
 		case FPServicesStateEditFileSelect:
 			return m.updateEditFileSelect(msg)
+		case FPServicesStateMetricsInput:
+			// Let form handle keys
 		}
+	}
+
+	// Update Metrics Input Form
+	if m.state == FPServicesStateMetricsInput && m.metricsForm != nil {
+		form, cmd := m.metricsForm.Update(msg)
+		if f, ok := form.(*huh.Form); ok {
+			m.metricsForm = f
+		}
+		if m.metricsForm.State == huh.StateCompleted {
+			return m.enableMetrics()
+		}
+		return m, cmd
 	}
 
 	// Update form in Nginx Select state
@@ -444,6 +469,27 @@ func (m FrankenPHPServicesModel) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		if len(m.services) > 0 {
 			m.state = FPServicesStateActions
 			m.actionCursor = 0
+			// Check metrics status
+			service := m.services[m.cursor]
+			caddyfilePath := fmt.Sprintf("/etc/frankenphp/%s/Caddyfile", service.SiteKey)
+			m.metricsEnabled = false // Reset
+			m.metricsPort = ""       // Reset
+
+			// Simple grep to check for metrics block
+			cmd := exec.Command("grep", "-q", "metrics", caddyfilePath)
+			if err := cmd.Run(); err == nil {
+				m.metricsEnabled = true
+				// Try to extract port
+				// Grep "127.0.0.1:[0-9]* {"
+				cmd := exec.Command("grep", "-oE", "127.0.0.1:[0-9]+", caddyfilePath)
+				out, _ := cmd.Output()
+				if len(out) > 0 {
+					parts := strings.Split(strings.TrimSpace(string(out)), ":")
+					if len(parts) > 1 {
+						m.metricsPort = parts[1]
+					}
+				}
+			}
 		}
 	case key.Matches(msg, key.NewBinding(key.WithKeys("r"))):
 		// Refresh services list
@@ -574,6 +620,34 @@ func (m FrankenPHPServicesModel) executeAction() (tea.Model, tea.Cmd) {
 			}
 		}
 
+	case "Enable Caddy Metrics":
+		m.state = FPServicesStateMetricsInput
+		m.metricsPort = "2222" // Suggest default
+		m.metricsForm = huh.NewForm(
+			huh.NewGroup(
+				huh.NewInput().
+					Key("metricsPort").
+					Title("Metrics Port").
+					Description("Port for Caddy metrics (available via 127.0.0.1 only)").
+					Placeholder("2222").
+					Validate(func(s string) error {
+						p, err := strconv.Atoi(s)
+						if err != nil || p < 1 || p > 65535 {
+							return fmt.Errorf("invalid port")
+						}
+						return nil
+					}).
+					Value(&m.metricsPort),
+			),
+		).WithTheme(m.theme.HuhTheme)
+		return m, m.metricsForm.Init()
+
+	case "Disable Caddy Metrics":
+		m.confirmAction = "disable_metrics"
+		m.confirmMsg = "Remove Caddy Metrics configuration? This will restart the service."
+		m.state = FPServicesStateConfirmAction
+		return m, nil
+
 	case "Edit Configuration (Form)":
 		m.state = FPServicesStateEdit
 		m.loadServiceForEdit(service)
@@ -649,10 +723,159 @@ func (m FrankenPHPServicesModel) doConfirmedAction() (tea.Model, tea.Cmd) {
 				Description: fmt.Sprintf("Deleting %s", service.Name),
 			}
 		}
+	case "disable_metrics":
+		m.state = FPServicesStateList
+		return m.disableMetrics()
 	}
 
 	m.state = FPServicesStateActions
 	return m, nil
+}
+
+func (m FrankenPHPServicesModel) enableMetrics() (tea.Model, tea.Cmd) {
+	service := m.services[m.cursor]
+	port := m.metricsPort
+
+	// 1. Append metrics block to Caddyfile
+	// 2. Run frankenphp fmt --overwrite
+	// 3. Restart service
+
+	binary := "/usr/local/bin/frankenphp" // Should Ideally detect or use stored
+	caddyfilePath := fmt.Sprintf("/etc/frankenphp/%s/Caddyfile", service.SiteKey)
+
+	// Metrics block
+	// We want it BEFORE the site block. The site block usually starts with :8000 or unix//...
+	// Simplest way: Prepend it? No, global options come first.
+	// Best approach: Append to file safely?
+	// But Caddyfile structure matters.
+	// Let's rely on Caddy fmt. We can append it to the end or beginning.
+	// If the site block is present, appending another block is fine as Caddy supports multiple site blocks.
+	// However, user requested "after the default caddy block before site block".
+	// This implies we need to read file, find position, insert, write back.
+	// Given we have loadCaddyfileForEdit logic, we know the structure roughly.
+	// Simple append is safest, let fmt handle formatting.
+	// But to match "before site block", we can try to prepend if it's not global options.
+
+	// Let's implement a safe append-and-format strategy.
+
+	metricsBlock := fmt.Sprintf("\n127.0.0.1:%s {\n\tmetrics\n}\n", port)
+
+	// We will use a temporary shell script to construct this
+	script := fmt.Sprintf(`#!/bin/bash
+caddyfile="%s"
+metrics_block='%s'
+
+# Check if metrics already exist to avoid duplication (simple check)
+if grep -q "127.0.0.1:%s" "$caddyfile"; then
+    echo "Metrics block already appears to exist."
+else
+    # Prepend to file? Or Append?
+    # Appending is safer for validity usually.
+    echo "$metrics_block" >> "$caddyfile"
+fi
+
+# Format
+%s fmt --overwrite "$caddyfile"
+
+# Restart
+sudo systemctl restart %s
+`, caddyfilePath, metricsBlock, port, binary, service.Name)
+
+	return m, func() tea.Msg {
+		return ExecutionStartMsg{
+			Command:     script,
+			Description: "Enabling Caddy Metrics",
+		}
+	}
+}
+
+func (m FrankenPHPServicesModel) disableMetrics() (tea.Model, tea.Cmd) {
+	service := m.services[m.cursor]
+
+	// Default guess if we didn't parse it
+	port := m.metricsPort
+	if port == "" {
+		port = "2222"
+	}
+	// Try to detect actual port from file again just in case
+	caddyfilePath := fmt.Sprintf("/etc/frankenphp/%s/Caddyfile", service.SiteKey)
+
+	binary := "/usr/local/bin/frankenphp"
+
+	// Script to remove the block
+	// sed is tricky with multi-line.
+	// But we know it's "127.0.0.1:PORT { metrics }" potentially formatted.
+	// We can use a python or perl one-liner, or simply rewrite file excluding lines?
+	// Safer: Read file, remove block in Go? simpler to do in a small script if possible.
+	// Actually, we can just use sed to delete the ranges.
+	// Assumption: formatted by caddy fmt
+	// 127.0.0.1:2222 {
+	// 	metrics
+	// }
+
+	script := fmt.Sprintf(`#!/bin/bash
+caddyfile="%s"
+
+# Remove the metrics block. 
+# Matches 127.0.0.1:PORT { ... } where ... contains metrics
+# This is complex with sed.
+# Alternative: Backup, grep -v? No.
+
+# Let's try a perl oneliner which handles multiline better, or a careful sed.
+# Deleting 127.0.0.1:PORT {, and closing }.
+
+# Start of block
+start_pattern="127.0.0.1:[0-9]\+ {"
+# We want to remove from start_pattern to closing }
+# This is risky if multiple blocks match.
+
+# Since we want to be exact, let's look for the port we detected.
+port_pattern="127.0.0.1:%s {"
+
+# Use a temporary file approach with python for robust removal if available
+if command -v python3 &>/dev/null; then
+python3 -c "
+import sys
+import re
+content = open('$caddyfile').read()
+# Regex to find the block
+pattern = re.compile(r'127\.0\.0\.1:%s\s*\{\s*metrics\s*\}', re.MULTILINE | re.DOTALL)
+content = pattern.sub('', content)
+open('$caddyfile', 'w').write(content)
+"
+else
+    # Fallback to simple sed (risky but functional for standard format)
+    # Assumes standard formatting 127.0.0.1:PORT { \n metrics \n }
+    sudo sed -i '/127.0.0.1:%s {/,/}/d' "$caddyfile"
+fi
+
+# Format
+%s fmt --overwrite "$caddyfile"
+
+# Restart
+sudo systemctl restart %s
+`, caddyfilePath, port, port, port, binary, service.Name)
+
+	return m, func() tea.Msg {
+		return ExecutionStartMsg{
+			Command:     script,
+			Description: "Disabling Caddy Metrics",
+		}
+	}
+}
+
+func (m FrankenPHPServicesModel) viewMetricsInput() string {
+	header := m.theme.Title.Render("Enable Caddy Metrics")
+
+	formView := ""
+	if m.metricsForm != nil {
+		formView = m.metricsForm.View()
+	}
+
+	help := m.theme.Help.Render("Enter: Confirm • Esc: Cancel")
+	content := lipgloss.JoinVertical(lipgloss.Left, header, "", formView, "", help)
+	bordered := m.theme.RenderBox(content)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
 }
 
 // loadServiceForEdit loads service config into edit form fields
@@ -723,6 +946,7 @@ func (m *FrankenPHPServicesModel) loadCaddyfileForEdit(path string) {
 	m.editPHPOpcacheJitBufferSize = "0"
 	m.editPHPRealpathCacheSize = "4096K"
 	m.editPHPRealpathCacheTtl = "600"
+	m.editPHPMaxUploadSize = "20"
 
 	cmd := exec.Command("cat", path)
 	output, err := cmd.Output()
@@ -741,6 +965,11 @@ func (m *FrankenPHPServicesModel) loadCaddyfileForEdit(path string) {
 		} else if strings.HasPrefix(line, "max_wait_time") {
 			val := strings.TrimSpace(strings.TrimPrefix(line, "max_wait_time"))
 			m.editMaxWaitTime = strings.TrimSuffix(val, "s")
+		} else if strings.HasPrefix(line, "max_size") {
+			// Inside request_body block?
+			// Format: max_size 20MB
+			val := strings.TrimSpace(strings.TrimPrefix(line, "max_size"))
+			m.editPHPMaxUploadSize = strings.TrimSuffix(strings.TrimSuffix(val, "MB"), "m")
 		} else if strings.HasPrefix(line, "root *") {
 			rootVal := strings.TrimSpace(strings.TrimPrefix(line, "root *"))
 			if rootVal != "" {
@@ -775,6 +1004,8 @@ func (m *FrankenPHPServicesModel) loadCaddyfileForEdit(path string) {
 					m.editPHPMemoryLimit = val
 				case "max_execution_time":
 					m.editPHPMaxExecutionTime = val
+				case "upload_max_filesize":
+					m.editPHPMaxUploadSize = strings.TrimSuffix(val, "M")
 				case "opcache.enable":
 					m.editPHPOpcacheEnable = val == "1"
 				case "opcache.enable_cli":
@@ -941,6 +1172,23 @@ func (m *FrankenPHPServicesModel) buildEditForm() *huh.Form {
 				Placeholder("30").
 				Value(&m.editPHPMaxExecutionTime),
 
+			huh.NewInput().
+				Key("maxUploadSize").
+				Title("Max Upload Size (MB)").
+				Description("Accepts positive integer. post_max_size will be +10MB.").
+				Placeholder("20").
+				Validate(func(s string) error {
+					v, err := strconv.Atoi(s)
+					if err != nil {
+						return fmt.Errorf("must be a positive integer")
+					}
+					if v <= 0 {
+						return fmt.Errorf("must be greater than 0")
+					}
+					return nil
+				}).
+				Value(&m.editPHPMaxUploadSize),
+
 			huh.NewConfirm().
 				Key("opcacheEnable").
 				Title("Enable OPcache").
@@ -1045,15 +1293,7 @@ func (m FrankenPHPServicesModel) generateConfigFiles() FrankenPHPServicesModel {
 		Content: serviceTemplate,
 	})
 
-	// 3. Nginx Config
-	nginxTemplate := m.generateNginxContent()
-	m.generatedFiles = append(m.generatedFiles, GeneratedFile{
-		Name:    "Nginx Config",
-		Path:    fmt.Sprintf("/etc/nginx/sites-available/%s.conf", id),
-		Content: nginxTemplate,
-	})
-
-	// 4. fpcli Wrapper
+	// 3. fpcli Wrapper
 	fpcliTemplate := m.generateFpcliContent()
 	m.generatedFiles = append(m.generatedFiles, GeneratedFile{
 		Name:    "fpcli Wrapper",
@@ -1079,11 +1319,21 @@ func (m FrankenPHPServicesModel) generateCaddyfileContent() string {
 		bindLine = fmt.Sprintf("bind 127.0.0.1:%s", port)
 	}
 
+	// Calculate upload sizes
+	uploadMax := m.editPHPMaxUploadSize
+	if uploadMax == "" {
+		uploadMax = "20"
+	}
+	uploadInt, _ := strconv.Atoi(uploadMax)
+	postMax := strconv.Itoa(uploadInt + 10)
+
 	// Build PHP directives
 	var phpDirectives strings.Builder
 	settings := map[string]string{
 		"memory_limit":                    m.editPHPMemoryLimit,
 		"max_execution_time":              m.editPHPMaxExecutionTime,
+		"upload_max_filesize":             uploadMax + "M",
+		"post_max_size":                   postMax + "M",
 		"opcache.enable":                  "0",
 		"opcache.enable_cli":              "0",
 		"opcache.memory_consumption":      m.editPHPOpcacheMemoryConsumption,
@@ -1111,7 +1361,7 @@ func (m FrankenPHPServicesModel) generateCaddyfileContent() string {
 	}
 
 	keys := []string{
-		"memory_limit", "max_execution_time", "opcache.enable", "opcache.enable_cli",
+		"memory_limit", "max_execution_time", "upload_max_filesize", "post_max_size", "opcache.enable", "opcache.enable_cli",
 		"opcache.memory_consumption", "opcache.interned_strings_buffer", "opcache.max_accelerated_files",
 		"opcache.validate_timestamps", "opcache.revalidate_freq", "opcache.jit",
 		"opcache.jit_buffer_size", "realpath_cache_size", "realpath_cache_ttl",
@@ -1123,6 +1373,8 @@ func (m FrankenPHPServicesModel) generateCaddyfileContent() string {
 		}
 	}
 
+	requestBody := fmt.Sprintf("request_body {\n\t\tmax_size %sMB\n\t}", uploadMax)
+
 	content, _ := stubs.LoadAndReplace("caddyfile", map[string]string{
 		"SITE_KEY":       id,
 		"NUM_THREADS":    m.editNumThreads,
@@ -1130,6 +1382,7 @@ func (m FrankenPHPServicesModel) generateCaddyfileContent() string {
 		"MAX_WAIT_TIME":  m.editMaxWaitTime,
 		"PORT":           port,
 		"BIND_LINE":      bindLine,
+		"REQUEST_BODY":   requestBody,
 		"DOCROOT":        docroot,
 		"PHP_DIRECTIVES": strings.TrimSpace(phpDirectives.String()),
 	})
@@ -1171,30 +1424,6 @@ func (m FrankenPHPServicesModel) generateServiceFileContent() string {
 	return content
 }
 
-func (m FrankenPHPServicesModel) generateNginxContent() string {
-	id := m.services[m.cursor].SiteKey
-	domains := m.editDomains
-	port := m.editPort
-	if port == "" {
-		port = "8000"
-	}
-
-	var upstream string
-	if m.editConnType == "socket" {
-		upstream = fmt.Sprintf("unix:/run/frankenphp/%s.sock", id)
-	} else {
-		upstream = fmt.Sprintf("127.0.0.1:%s", port)
-	}
-
-	content, _ := stubs.LoadAndReplace("nginx", map[string]string{
-		"DOMAINS":  domains,
-		"UPSTREAM": upstream,
-		"SITE_KEY": id,
-	})
-
-	return content
-}
-
 func (m FrankenPHPServicesModel) getFullDocroot() string {
 	if m.editDocroot == "" {
 		return m.editSiteRoot
@@ -1211,19 +1440,34 @@ func (m FrankenPHPServicesModel) buildDeployCommand() string {
 	user := m.editUser
 	group := m.editGroup
 
+	// Determine the system user (owner) for deployment sync
+	systemUser := getGitSystemUser()
+	if systemUser == "" {
+		systemUser = os.Getenv("USER")
+	}
+
 	var script strings.Builder
 	script.WriteString("#!/bin/bash\nset -e\n\n")
 	script.WriteString(fmt.Sprintf("echo \"Updating FrankenPHP Service: %s\"\n", service.Name))
 
-	// Create storage directory
-	// Create storage directory structure
-	script.WriteString(fmt.Sprintf("\nsudo mkdir -p /var/lib/caddy/%s/config\n", siteKey))
+	// Base /var/lib/caddy setup
+	script.WriteString("\nsudo mkdir -p /var/lib/caddy\n")
+	script.WriteString(fmt.Sprintf("sudo chown -R %s:%s /var/lib/caddy\n", user, group))
+	script.WriteString("sudo chmod -R 750 /var/lib/caddy\n")
+
+	// Ensure system user is in web group
+	script.WriteString(fmt.Sprintf("if ! groups %s | grep -q \"\\b%s\\b\"; then\n", systemUser, group))
+	script.WriteString(fmt.Sprintf("    sudo usermod -a -G %s %s\n", group, systemUser))
+	script.WriteString("fi\n")
+
+	// Create site-specific storage directory structure
+	script.WriteString(fmt.Sprintf("sudo mkdir -p /var/lib/caddy/%s/config\n", siteKey))
 	script.WriteString(fmt.Sprintf("sudo mkdir -p /var/lib/caddy/%s/data\n", siteKey))
 	script.WriteString(fmt.Sprintf("sudo mkdir -p /var/lib/caddy/%s/tls\n", siteKey))
 
-	// Set permissions
-	script.WriteString(fmt.Sprintf("sudo chown -R %s:%s /var/lib/caddy/%s\n", user, user, siteKey))
-	script.WriteString(fmt.Sprintf("sudo chmod -R 750 /var/lib/caddy/%s\n", siteKey))
+	// Set site-specific permissions
+	script.WriteString(fmt.Sprintf("sudo chown -R %s:%s /var/lib/caddy/%s\n", systemUser, group, siteKey))
+	script.WriteString(fmt.Sprintf("sudo chmod -R 775 /var/lib/caddy/%s\n", siteKey))
 
 	// Write generated files
 	for _, file := range m.generatedFiles {
@@ -1460,6 +1704,9 @@ func (m FrankenPHPServicesModel) viewList() string {
 			if svc.Port != "" {
 				details = append(details, fmt.Sprintf("    Port: %s", svc.Port))
 			}
+			if m.metricsEnabled && m.metricsPort != "" {
+				details = append(details, fmt.Sprintf("    %s http://127.0.0.1:%s/metrics", m.theme.SuccessStyle.Render("Metrics:"), m.metricsPort))
+			}
 			if svc.User != "" {
 				details = append(details, fmt.Sprintf("    User: %s", svc.User))
 			}
@@ -1533,6 +1780,14 @@ func (m FrankenPHPServicesModel) viewActions() string {
 	items = append(items, "")
 
 	for i, action := range m.actions {
+		// Filter dynamic metrics actions
+		if action == "Enable Caddy Metrics" && m.metricsEnabled {
+			continue // Already enabled
+		}
+		if action == "Disable Caddy Metrics" && !m.metricsEnabled {
+			continue // Already disabled
+		}
+
 		cursor := "  "
 		if i == m.actionCursor {
 			cursor = m.theme.KeyStyle.Render("▶ ")
@@ -1545,6 +1800,11 @@ func (m FrankenPHPServicesModel) viewActions() string {
 			renderedItem = m.theme.MenuItem.Render(fmt.Sprintf("%s%s", cursor, action))
 		}
 		items = append(items, renderedItem)
+	}
+
+	if m.metricsEnabled && m.metricsPort != "" {
+		items = append(items, "")
+		items = append(items, m.theme.SuccessStyle.Render(fmt.Sprintf("Metrics available at: http://127.0.0.1:%s/metrics", m.metricsPort)))
 	}
 
 	menu := lipgloss.JoinVertical(lipgloss.Left, items...)

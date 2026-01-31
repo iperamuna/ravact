@@ -21,6 +21,8 @@
 	# Listen via specified method
 	{{BIND_LINE}}
 
+	{{REQUEST_BODY}}
+
 	root * {{DOCROOT}}
 	php_server {
 		try_files {path} /index.php

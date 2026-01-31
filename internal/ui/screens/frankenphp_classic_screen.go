@@ -63,6 +63,7 @@ type FrankenPHPClassicModel struct {
 	formPHPOpcacheJitBufferSize     string
 	formPHPRealpathCacheSize        string
 	formPHPRealpathCacheTtl         string
+	formPHPMaxUploadSize            string
 
 	// Composer setup options
 	composerOptions []ComposerSetupOption
@@ -218,6 +219,7 @@ func NewFrankenPHPClassicModelWithDir(currentDir string) FrankenPHPClassicModel 
 		formPHPOpcacheJitBufferSize:     "0",
 		formPHPRealpathCacheSize:        "4096K",
 		formPHPRealpathCacheTtl:         "600",
+		formPHPMaxUploadSize:            "20",
 		detector:                        system.NewDetector(),
 	}
 
@@ -391,6 +393,23 @@ func (m FrankenPHPClassicModel) buildSiteSetupForm() *huh.Form {
 				Title("PHP max_execution_time").
 				Placeholder("30").
 				Value(&m.formPHPMaxExecutionTime),
+
+			huh.NewInput().
+				Key("maxUploadSize").
+				Title("Max Upload Size (MB)").
+				Description("Accepts positive integer. post_max_size will be +10MB.").
+				Placeholder("20").
+				Validate(func(s string) error {
+					v, err := strconv.Atoi(s)
+					if err != nil {
+						return fmt.Errorf("must be a positive integer")
+					}
+					if v <= 0 {
+						return fmt.Errorf("must be greater than 0")
+					}
+					return nil
+				}).
+				Value(&m.formPHPMaxUploadSize),
 
 			huh.NewConfirm().
 				Key("opcacheEnable").
@@ -1089,20 +1108,35 @@ func (m FrankenPHPClassicModel) buildCreateSiteCommand() string {
 	script.WriteString(fmt.Sprintf("echo \"  Site Root: %s\"\n", siteRoot))
 	script.WriteString("echo \"\"\n")
 
-	// Create directories
+	// Determine the system user (owner)
+	systemUser := getGitSystemUser()
+	if systemUser == "" {
+		systemUser = os.Getenv("USER")
+	}
+
+	// Create directories and set permissions
 	script.WriteString(fmt.Sprintf("sudo mkdir -p /etc/frankenphp/%s\n", siteKey))
 	script.WriteString("sudo mkdir -p /run/frankenphp\n")
 	script.WriteString(fmt.Sprintf("sudo chown %s:%s /run/frankenphp\n", user, group))
 
-	// Create storage directory
-	// Create storage directory structure
+	// Base /var/lib/caddy setup
+	script.WriteString("sudo mkdir -p /var/lib/caddy\n")
+	script.WriteString(fmt.Sprintf("sudo chown -R %s:%s /var/lib/caddy\n", user, group))
+	script.WriteString("sudo chmod -R 750 /var/lib/caddy\n")
+
+	// Ensure system user is in web group
+	script.WriteString(fmt.Sprintf("if ! groups %s | grep -q \"\\b%s\\b\"; then\n", systemUser, group))
+	script.WriteString(fmt.Sprintf("    sudo usermod -a -G %s %s\n", group, systemUser))
+	script.WriteString("fi\n")
+
+	// Create site-specific storage directory structure
 	script.WriteString(fmt.Sprintf("sudo mkdir -p /var/lib/caddy/%s/config\n", siteKey))
 	script.WriteString(fmt.Sprintf("sudo mkdir -p /var/lib/caddy/%s/data\n", siteKey))
 	script.WriteString(fmt.Sprintf("sudo mkdir -p /var/lib/caddy/%s/tls\n", siteKey))
 
-	// Set permissions
-	script.WriteString(fmt.Sprintf("sudo chown -R %s:%s /var/lib/caddy/%s\n", user, user, siteKey))
-	script.WriteString(fmt.Sprintf("sudo chmod -R 750 /var/lib/caddy/%s\n", siteKey))
+	// Set site-specific permissions
+	script.WriteString(fmt.Sprintf("sudo chown -R %s:%s /var/lib/caddy/%s\n", systemUser, group, siteKey))
+	script.WriteString(fmt.Sprintf("sudo chmod -R 775 /var/lib/caddy/%s\n", siteKey))
 
 	// Write generated files (this includes Caddyfile, Service, php.ini, Nginx, fpcli)
 	for _, file := range m.generatedFiles {
@@ -1128,14 +1162,6 @@ func (m FrankenPHPClassicModel) buildCreateSiteCommand() string {
 	script.WriteString("sudo systemctl daemon-reload\n")
 	script.WriteString(fmt.Sprintf("sudo systemctl enable --now %s\n", serviceName))
 	script.WriteString(fmt.Sprintf("echo \"✓ Service %s enabled and started\"\n", serviceName))
-
-	// Enable Nginx site if config exists
-	nginxConf := fmt.Sprintf("/etc/nginx/sites-available/%s.conf", siteKey)
-	script.WriteString(fmt.Sprintf("\nif [ -f \"%s\" ]; then\n", nginxConf))
-	script.WriteString(fmt.Sprintf("    ln -sf \"%s\" \"/etc/nginx/sites-enabled/%s.conf\" 2>/dev/null || true\n", nginxConf, siteKey))
-	script.WriteString("    echo \"Validating Nginx configuration...\"\n")
-	script.WriteString("    nginx -t\n")
-	script.WriteString("fi\n")
 
 	// Set executable bit for fpcli
 	script.WriteString("\nchmod +x /usr/local/bin/fpcli 2>/dev/null || true\n")
@@ -1294,7 +1320,7 @@ echo " FrankenPHP site is ready."
 	}
 }
 
-// generateConfigFiles generates the content for the 3 config files
+// generateConfigFiles generates the content for the required config files
 func (m FrankenPHPClassicModel) generateConfigFiles() FrankenPHPClassicModel {
 	m.generatedFiles = []GeneratedFile{}
 
@@ -1316,14 +1342,7 @@ func (m FrankenPHPClassicModel) generateConfigFiles() FrankenPHPClassicModel {
 		Content: serviceTemplate,
 	})
 
-	// 3. Nginx Config
-	nginxTemplate := m.generateNginxContent()
-	m.generatedFiles = append(m.generatedFiles, GeneratedFile{
-		Name:    "Nginx Config",
-		Path:    fmt.Sprintf("/etc/nginx/sites-available/%s.conf", id),
-		Content: nginxTemplate,
-	})
-	// 4. fpcli Wrapper
+	// 3. fpcli Wrapper
 	fpcliTemplate := m.generateFpcliContent()
 	m.generatedFiles = append(m.generatedFiles, GeneratedFile{
 		Name:    "fpcli Wrapper",
@@ -1352,11 +1371,21 @@ func (m FrankenPHPClassicModel) generateCaddyfileContent() string {
 		bindLine = fmt.Sprintf("bind 127.0.0.1:%s", port)
 	}
 
+	// Calculate upload sizes
+	uploadMax := m.formPHPMaxUploadSize
+	if uploadMax == "" {
+		uploadMax = "20"
+	}
+	uploadInt, _ := strconv.Atoi(uploadMax)
+	postMax := strconv.Itoa(uploadInt + 10)
+
 	// Build PHP directives
 	var phpDirectives strings.Builder
 	settings := map[string]string{
 		"memory_limit":                    m.formPHPMemoryLimit,
 		"max_execution_time":              m.formPHPMaxExecutionTime,
+		"upload_max_filesize":             uploadMax + "M",
+		"post_max_size":                   postMax + "M",
 		"opcache.enable":                  "0",
 		"opcache.enable_cli":              "0",
 		"opcache.memory_consumption":      m.formPHPOpcacheMemoryConsumption,
@@ -1384,7 +1413,7 @@ func (m FrankenPHPClassicModel) generateCaddyfileContent() string {
 	}
 
 	keys := []string{
-		"memory_limit", "max_execution_time", "opcache.enable", "opcache.enable_cli",
+		"memory_limit", "max_execution_time", "upload_max_filesize", "post_max_size", "opcache.enable", "opcache.enable_cli",
 		"opcache.memory_consumption", "opcache.interned_strings_buffer", "opcache.max_accelerated_files",
 		"opcache.validate_timestamps", "opcache.revalidate_freq", "opcache.jit",
 		"opcache.jit_buffer_size", "realpath_cache_size", "realpath_cache_ttl",
@@ -1396,6 +1425,8 @@ func (m FrankenPHPClassicModel) generateCaddyfileContent() string {
 		}
 	}
 
+	requestBody := fmt.Sprintf("request_body {\n\t\tmax_size %sMB\n\t}", uploadMax)
+
 	content, err := stubs.LoadAndReplace("caddyfile", map[string]string{
 		"SITE_KEY":       id,
 		"NUM_THREADS":    numThreads,
@@ -1403,6 +1434,7 @@ func (m FrankenPHPClassicModel) generateCaddyfileContent() string {
 		"MAX_WAIT_TIME":  maxWaitTime,
 		"PORT":           port,
 		"BIND_LINE":      bindLine,
+		"REQUEST_BODY":   requestBody,
 		"DOCROOT":        docroot,
 		"PHP_DIRECTIVES": strings.TrimSpace(phpDirectives.String()),
 	})
@@ -1445,41 +1477,6 @@ func (m FrankenPHPClassicModel) generateServiceFileContent() string {
 	})
 	if err != nil {
 		return fmt.Sprintf("Error loading service stub: %v", err)
-	}
-
-	return content
-}
-
-// generateNginxContent generates the Nginx proxy configuration
-func (m FrankenPHPClassicModel) generateNginxContent() string {
-	id := m.formSiteKey
-	domains := m.formDomains
-	if domains == "" {
-		domains = id + ".test"
-	}
-
-	var upstream string
-	if m.formConnType == "socket" {
-		upstream = fmt.Sprintf(`upstream frankenphp_%s {
-    server unix:/run/frankenphp/%s.sock fail_timeout=0;
-}`, id, id)
-	} else {
-		port := m.formPort
-		if port == "" {
-			port = "8000"
-		}
-		upstream = fmt.Sprintf(`upstream frankenphp_%s {
-    server 127.0.0.1:%s fail_timeout=0;
-}`, id, port)
-	}
-
-	content, err := stubs.LoadAndReplace("nginx", map[string]string{
-		"UPSTREAM": upstream,
-		"DOMAINS":  domains,
-		"SITE_KEY": id,
-	})
-	if err != nil {
-		return fmt.Sprintf("Error loading nginx stub: %v", err)
 	}
 
 	return content
@@ -1645,7 +1642,7 @@ func (m FrankenPHPClassicModel) viewSiteSetup() string {
 	)
 
 	// Architecture description
-	archInfo := m.theme.DescriptionStyle.Render("Creates: systemd service + Nginx vhost + Unix socket + TCP port fallback")
+	archInfo := m.theme.DescriptionStyle.Render("Creates: systemd service + FrankenPHP Caddyfile + Unix socket + TCP port fallback")
 
 	// Render the huh form
 	formView := ""
@@ -1716,6 +1713,7 @@ func (m FrankenPHPClassicModel) viewConfirm() string {
 	summary = append(summary, m.theme.Subtitle.Render("PHP Configuration:"))
 	summary = append(summary, m.theme.Label.Render("Memory Limit:  ")+m.theme.InfoStyle.Render(m.formPHPMemoryLimit))
 	summary = append(summary, m.theme.Label.Render("Max Exec Time: ")+m.theme.InfoStyle.Render(m.formPHPMaxExecutionTime+"s"))
+	summary = append(summary, m.theme.Label.Render("Max Upload:    ")+m.theme.InfoStyle.Render(m.formPHPMaxUploadSize+"MB"))
 	opcacheStatus := "Enabled"
 	if !m.formPHPOpcacheEnable {
 		opcacheStatus = "Disabled"
@@ -1734,7 +1732,6 @@ func (m FrankenPHPClassicModel) viewConfirm() string {
 	summary = append(summary, m.theme.DescriptionStyle.Render(fmt.Sprintf("  • %s", m.theme.Label.Render("systemd service: "))+fmt.Sprintf("/etc/systemd/system/frankenphp-%s.service", siteKey)))
 	summary = append(summary, m.theme.DescriptionStyle.Render(fmt.Sprintf("  • %s", m.theme.Label.Render("FrankenPHP Caddyfile: "))+fmt.Sprintf("/etc/frankenphp/%s/Caddyfile", siteKey)))
 	summary = append(summary, m.theme.DescriptionStyle.Render(fmt.Sprintf("  • %s", m.theme.Label.Render("Custom app-php.ini: "))+fmt.Sprintf("/etc/frankenphp/%s/app-php.ini", siteKey)))
-	summary = append(summary, m.theme.DescriptionStyle.Render(fmt.Sprintf("  • %s", m.theme.Label.Render("Nginx proxy config: "))+fmt.Sprintf("/etc/nginx/sites-available/%s.conf", siteKey)))
 	summary = append(summary, m.theme.DescriptionStyle.Render(fmt.Sprintf("  • %s", m.theme.Label.Render("CLI wrapper script: "))+"/usr/local/bin/fpcli"))
 
 	if m.formConnType == "socket" {

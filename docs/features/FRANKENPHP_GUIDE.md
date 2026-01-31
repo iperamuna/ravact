@@ -178,6 +178,10 @@ Select a service and press **Enter** to see available actions:
 - **Edit Configuration**:
   - **Form Mode**: Edit common settings (Port, User, PHP.ini) in a guided form.
   - **Editor Mode**: Directly edit the `Caddyfile`, `Systemd Service`, or `Nginx Config` in your preferred editor (nano/vi).
+- **Caddy Metrics**:
+  - **Enable Caddy Metrics**: Configure a dedicated port (default 2222) to expose Caddy metrics (`/metrics`).
+  - **Disable Caddy Metrics**: Remove the metrics configuration.
+  - Metrics are only accessible via `127.0.0.1` for security.
 - **View Nginx Config**: Generates and displays the correct Nginx configuration block to proxy traffic to this service (supports both Socket and Port modes).
 - **Delete Service**: Completely removes the service, configuration files, and data directories (with confirmation).
 
