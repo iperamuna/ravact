@@ -11,7 +11,7 @@ import (
 	"github.com/iperamuna/ravact/internal/ui/screens"
 )
 
-var Version = "0.2.1"
+var Version = "0.4.1"
 
 //go:embed assets
 var embeddedAssets embed.FS
