@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/yourusername/ravact/internal/system"
+	"github.com/iperamuna/ravact/internal/system"
 )
 
 func main() {
@@ -30,18 +30,18 @@ func main() {
 	start := time.Now()
 	users, err := um.GetAllUsers()
 	duration := time.Since(start)
-	
+
 	if err != nil {
 		fmt.Printf("✗ FAIL: GetAllUsers() returned error: %v\n", err)
 		fmt.Println()
 	} else {
 		fmt.Printf("✓ PASS: GetAllUsers() succeeded in %v\n", duration)
 		fmt.Printf("  Found %d users\n", len(users))
-		
+
 		if duration > 5*time.Second {
 			fmt.Printf("⚠ WARNING: Took longer than 5 seconds (%v)\n", duration)
 		}
-		
+
 		// Show first few users
 		fmt.Println()
 		fmt.Println("Sample users:")
@@ -60,18 +60,18 @@ func main() {
 	start = time.Now()
 	groups, err := um.GetAllGroups()
 	duration = time.Since(start)
-	
+
 	if err != nil {
 		fmt.Printf("✗ FAIL: GetAllGroups() returned error: %v\n", err)
 		fmt.Println()
 	} else {
 		fmt.Printf("✓ PASS: GetAllGroups() succeeded in %v\n", duration)
 		fmt.Printf("  Found %d groups\n", len(groups))
-		
+
 		if duration > 5*time.Second {
 			fmt.Printf("⚠ WARNING: Took longer than 5 seconds (%v)\n", duration)
 		}
-		
+
 		// Show first few groups
 		fmt.Println()
 		fmt.Println("Sample groups:")
@@ -89,11 +89,20 @@ func main() {
 	fmt.Println("Test 4: Testing specific user lookup...")
 	testUser := "root"
 	start = time.Now()
-	hasSudo := um.UserHasSudo(testUser)
+
+	user, err := um.GetUser(testUser)
+	hasSudo := false
+	if err == nil {
+		hasSudo = user.HasSudo
+	} else {
+		// If root doesn't exist (unlikely), handle gracefully or just show false
+		fmt.Printf("Note: User %s not found\n", testUser)
+	}
+
 	duration = time.Since(start)
-	
+
 	fmt.Printf("✓ User '%s' sudo check: %v (took %v)\n", testUser, hasSudo, duration)
-	
+
 	if duration > 2*time.Second {
 		fmt.Printf("⚠ WARNING: Sudo check took longer than 2 seconds\n")
 	}
