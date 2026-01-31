@@ -44,6 +44,10 @@ type LaravelPermissionsModel struct {
 	availableUsers []string
 	selectingUser  bool
 
+	// Storage Link state
+	storageLinkState string // "", "prompt"
+	pendingAction    LaravelPermAction
+
 	// Scheduler Form
 	schedulerForm *huh.Form
 	schedUser     string
@@ -115,44 +119,52 @@ func (m *LaravelPermissionsModel) buildActions() []LaravelPermAction {
 		{
 			ID:          "standard",
 			Name:        "Set Standard Permissions",
-			Description: "Set 755 for directories, 644 for files (recommended)",
-			Command:     "find . -type d -exec chmod 755 {} \\; && find . -type f -exec chmod 644 {} \\;",
+			Description: "Set 775 for directories, 664 for files",
+			Command:     "sudo find . -type d -exec chmod 775 {} \\; && sudo find . -type f -exec chmod 664 {} \\;",
 		},
 		{
 			ID:          "storage_writable",
 			Name:        "Make Storage Writable",
 			Description: "Set storage & bootstrap/cache writable by web server",
-			Command:     fmt.Sprintf("chmod -R 775 storage bootstrap/cache && chown -R %s:%s storage bootstrap/cache", ownerUser, webUser),
+			Command:     fmt.Sprintf("sudo chgrp -R %s storage bootstrap/cache && sudo chmod -R ug+rwx storage bootstrap/cache", webUser),
 		},
 		{
 			ID:          "full_reset",
 			Name:        "Full Permission Reset",
-			Description: "Reset all permissions and set proper ownership",
-			Command:     fmt.Sprintf("find . -type d -exec chmod 755 {} \\; && find . -type f -exec chmod 644 {} \\; && chmod -R 775 storage bootstrap/cache && chown -R %s:%s .", ownerUser, webUser),
+			Description: "Comprehensive reset: group sync, ownership, and 775/664 permissions",
+			Command: fmt.Sprintf(`# Add user to web group if not already there
+if ! groups %s | grep -q "\b%s\b"; then
+    sudo usermod -a -G %s %s
+fi
+sudo chown -R %s:%s .
+sudo find . -type d -exec chmod 775 {} \;
+sudo find . -type f -exec chmod 664 {} \;
+sudo chgrp -R %s storage bootstrap/cache
+sudo chmod -R ug+rwx storage bootstrap/cache`, ownerUser, webUser, webUser, ownerUser, ownerUser, webUser, webUser),
 		},
 		{
 			ID:          "storage_777",
 			Name:        "Storage 777 (Development Only)",
 			Description: "⚠ Set storage to 777 - use only for development",
-			Command:     "chmod -R 777 storage bootstrap/cache",
+			Command:     "sudo chmod -R 777 storage bootstrap/cache",
 		},
 		{
 			ID:          "fix_vendor",
 			Name:        "Fix Vendor Permissions",
 			Description: "Make vendor directory readable",
-			Command:     "chmod -R 755 vendor",
+			Command:     "sudo chmod -R 775 vendor",
 		},
 		{
 			ID:          "secure_env",
 			Name:        "Secure .env File",
 			Description: "Set .env to 600 (owner read/write only)",
-			Command:     "chmod 600 .env",
+			Command:     "sudo chmod 600 .env",
 		},
 		{
 			ID:          "artisan_executable",
 			Name:        "Make Artisan Executable",
 			Description: "Set execute permission on artisan",
-			Command:     "chmod +x artisan",
+			Command:     "sudo chmod +x artisan",
 		},
 		{
 			ID:          "clear_cache_files",
@@ -245,6 +257,16 @@ func isLaravelProject(path string) bool {
 	return false
 }
 
+// isStorageLinked checks if the public/storage link is setup
+func isStorageLinked(path string) bool {
+	storageLink := filepath.Join(path, "public", "storage")
+	fi, err := os.Lstat(storageLink)
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeSymlink != 0
+}
+
 // detectWebUser tries to detect the web server user
 func detectWebUser() string {
 	// Common web server users in order of likelihood
@@ -290,6 +312,22 @@ func (m LaravelPermissionsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.envState == "confirm_key" {
 			return m.updateKeyConfirm(msg)
+		}
+
+		// Handle storage link prompt
+		if m.storageLinkState == "prompt" {
+			switch msg.String() {
+			case "y", "Y", "enter":
+				m.storageLinkState = ""
+				// Append storage:link to command
+				action := m.pendingAction
+				action.Command += " && php artisan storage:link"
+				return m.executeSpecialAction(action)
+			case "n", "N", "esc":
+				m.storageLinkState = ""
+				return m.executeSpecialAction(m.pendingAction)
+			}
+			return m, nil
 		}
 
 		switch msg.String() {
@@ -496,7 +534,7 @@ crontab -u ${CRON_USER} -l
 }
 
 // executeAction executes the selected permission action
-func (m LaravelPermissionsModel) executeAction() (LaravelPermissionsModel, tea.Cmd) {
+func (m LaravelPermissionsModel) executeAction() (tea.Model, tea.Cmd) {
 	m.err = nil
 	m.success = ""
 
@@ -506,6 +544,13 @@ func (m LaravelPermissionsModel) executeAction() (LaravelPermissionsModel, tea.C
 		return m, func() tea.Msg {
 			return NavigateMsg{Screen: SiteCommandsScreen}
 		}
+	}
+
+	// Check for storage link on permission/reset actions
+	if (action.ID == "standard" || action.ID == "full_reset" || action.ID == "storage_writable") && !isStorageLinked(m.projectPath) {
+		m.storageLinkState = "prompt"
+		m.pendingAction = action
+		return m, nil
 	}
 
 	// Handle .env creation specially
@@ -556,26 +601,7 @@ func (m LaravelPermissionsModel) executeAction() (LaravelPermissionsModel, tea.C
 		return m, nil
 	}
 
-	if action.Command == "" {
-		return m, nil
-	}
-
-	// Wrap command in sudo heredoc
-	finalCommand := action.Command
-	if m.systemUser != "" {
-		finalCommand = fmt.Sprintf(`sudo -i -u %s bash << 'EOF'
-cd "%s"
-%s
-EOF
-`, m.systemUser, m.projectPath, action.Command)
-	}
-
-	return m, func() tea.Msg {
-		return ExecutionStartMsg{
-			Command:     finalCommand,
-			Description: action.Name,
-		}
-	}
+	return m.executeSpecialAction(action)
 }
 
 // View renders the Laravel permissions screen
@@ -600,6 +626,11 @@ func (m LaravelPermissionsModel) View() string {
 	}
 	if m.envState == "confirm_key" {
 		return m.viewKeyConfirm()
+	}
+
+	// Handle storage link prompt
+	if m.storageLinkState == "prompt" {
+		return m.viewStorageLinkPrompt()
 	}
 
 	// Header
@@ -839,4 +870,54 @@ func (m LaravelPermissionsModel) viewSchedulerForm() string {
 
 	content := lipgloss.JoinVertical(lipgloss.Left, header, "", form, "", help)
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.theme.RenderBox(content))
+}
+
+func (m LaravelPermissionsModel) viewStorageLinkPrompt() string {
+	header := m.theme.Title.Render("Storage Link Missing")
+
+	info := lipgloss.JoinVertical(lipgloss.Left,
+		m.theme.WarningStyle.Render("public/storage link is not detected."),
+		"",
+		m.theme.DescriptionStyle.Render("Do you want to setup the storage link now?"),
+		m.theme.DescriptionStyle.Render("(Runs: php artisan storage:link)"),
+	)
+
+	options := []string{"Y: Yes, setup storage link", "N: No, skip for now"}
+
+	var items []string
+	items = append(items, "")
+	for _, opt := range options {
+		items = append(items, m.theme.MenuItem.Render("  "+opt))
+	}
+
+	menu := lipgloss.JoinVertical(lipgloss.Left, items...)
+
+	help := m.theme.Help.Render("Y: Yes • N: No • Esc: Cancel")
+
+	content := lipgloss.JoinVertical(lipgloss.Left, header, "", info, menu, "", help)
+	bordered := m.theme.RenderBox(content)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, bordered)
+}
+
+func (m LaravelPermissionsModel) executeSpecialAction(action LaravelPermAction) (tea.Model, tea.Cmd) {
+	if action.Command == "" {
+		return m, nil
+	}
+
+	// Wrap command in sudo heredoc
+	finalCommand := action.Command
+	if m.systemUser != "" {
+		finalCommand = fmt.Sprintf(`sudo -i -u %s bash << 'EOF'
+cd "%s"
+%s
+EOF
+`, m.systemUser, m.projectPath, action.Command)
+	}
+
+	return m, func() tea.Msg {
+		return ExecutionStartMsg{
+			Command:     finalCommand,
+			Description: action.Name,
+		}
+	}
 }
