@@ -222,7 +222,7 @@ Comprehensive documentation is available in the [docs](docs/) directory.
 | **UI** | [UI Guide](docs/ui/UI_GUIDE.md) • [Keyboard Shortcuts](docs/ui/KEYBOARD_SHORTCUTS.md) |
 | **Development** | [Development Guide](docs/development/DEVELOPMENT.md) • [Setup Scripts](docs/setup/SETUP_SCRIPTS_GUIDE.md) |
 | **Help** | [Troubleshooting](docs/troubleshooting/TROUBLESHOOTING.md) • [macOS Limitations](docs/troubleshooting/MACOS_LIMITATIONS.md) |
-| **Project** | [Changelog](docs/project/CHANGELOG.md) • [Project Status](docs/project/PROJECT_STATUS.md) • [TODO/Roadmap](docs/project/TODO.md) |
+| **Project** | [Changelog](CHANGELOG.md) • [Project Status](docs/project/PROJECT_STATUS.md) • [TODO/Roadmap](docs/project/TODO.md) |
 
 ## 🛠️ Technology Stack
 
@@ -268,7 +268,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## 📊 Project Status
 
-**Version**: 0.4.0
+**Version**: 0.4.1
 
 **All Features Implemented**:
 - ✅ Complete software setup automation (13+ packages)

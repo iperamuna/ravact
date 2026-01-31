@@ -1,6 +1,24 @@
 # Changelog
 
-[← Back to Documentation](../README.md)
+[← Back to Documentation](README.md)
+
+## [0.4.1] - 2026-01-31
+
+### Added
+- **FrankenPHP Caddy Metrics**: Added comprehensive support for Caddy metrics in FrankenPHP services
+  - **Metrics Toggle**: Enable/Disable metrics collection via the service actions menu
+  - **Port Configuration**: Configurable metrics port (default 2222), accessible via localhost only
+  - **Auto-Update**: Automatically updates Caddyfile and restarts service when enabling/disabling
+- **Laravel Permissions Enhancements**:
+  - **Storage Link Detection**: Automatically detects missing `public/storage` link and prompts to create it during permission actions
+  - **Group Sync**: "Full Permission Reset" now ensures the system user is part of the web server group (using `usermod`)
+  - **Improved Reset Logic**: more robust permissions reset command with explicit `sudo` usage for all commands
+
+### Changed
+- **Nginx Config Handling**: Stopped automatic generation of Nginx config files during service creation/update (use "View Nginx Config" to generate on demand) for better manual control
+- **Caddyfile Generation**: Improved default PHP settings in Caddyfile including customizable upload and post max sizes
+
+---
 
 ## [0.4.0] - 2026-01-31
 
